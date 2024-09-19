@@ -1,0 +1,42 @@
+# Ignorar archivos globales de sistema
+.DS_Store
+Thumbs.db
+
+# Ejecutables de Go
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Archivos compilados
+*.o
+*.a
+
+# Archivos de dependencias del proyecto Go
+vendor/
+go.sum
+
+# Directorio de módulos de Go
+/go
+
+# Archivos de configuración de GoLand
+.idea/
+*.iml
+
+# Archivos de LaTeX compilados
+*.aux
+*.log
+*.toc
+*.out
+*.synctex.gz
+*.fdb_latexmk
+*.fls
+*.bbl
+*.blg
+
+# Ignorar PDFs generados de LaTeX
+*.pdf
+
+# Opcional: ignorar archivos temporales o de respaldo
+*~
+*.bak
