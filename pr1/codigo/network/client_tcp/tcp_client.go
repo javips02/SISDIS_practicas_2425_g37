@@ -20,7 +20,7 @@ func measureTCPDial(serverAddr string) {
 		fmt.Println("Connected successfully")
 		conn.Close()
 	}
-	fmt.Printf("Failed Dial took: %v\n", duration)
+	fmt.Printf("Dial took: %v\n", duration)
 
 	// Wait for server to start
 	fmt.Println("\nPlease start the server, then press Enter.")
