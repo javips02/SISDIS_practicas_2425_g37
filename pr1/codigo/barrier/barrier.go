@@ -66,6 +66,7 @@ func getEndpoints() ([]string, int, error) {
 	return endpoints, lineNumber, err
 }
 
+// Accept connections
 func acceptAndHandleConnections(listener net.Listener, quitChannel chan bool,
 	barrierChan chan bool, receivedMap *map[string]bool, mu *sync.Mutex) {
 	var n int // Inicializar contador de conexiones
@@ -119,12 +120,14 @@ func main() {
 	} else if endPoints, lineNumber, err := getEndpoints(); err != nil {
 		// Get the endpoint for current process
 		localEndpoint := endPoints[lineNumber-1]
+		//Here we have in localEndpoint a list of endpoints as strings
 		if listener, err = net.Listen("tcp", localEndpoint); err != nil {
 			fmt.Println("Error creating listener:", err)
 		} else {
 			fmt.Println("Listening on", localEndpoint)
 			// Barrier synchronization
 			var mu sync.Mutex
+			//Write true in this channel to stop acceptAndHandleConn
 			quitChannel := make(chan bool)
 			receivedMap := make(map[string]bool)
 			barrierChan := make(chan bool)
