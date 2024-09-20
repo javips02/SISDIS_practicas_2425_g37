@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -49,69 +50,44 @@ func handleConnection(conn net.Conn, barrierChan chan<- bool, received *map[stri
 	mu.Unlock()
 }
 
-func main() {
-	if len(os.Args) != 3 {
-		fmt.Println("Usage: go run main.go <endpoints_file> <line_number>")
-		return
-	}
-
+// Get enpoints (IP adresse:port for each distributed process)
+func getEndpoints() ([]string, int, error) {
 	endpointsFile := os.Args[1]
+	var endpoints []string // Por qué esta declaración ?
 	lineNumber, err := strconv.Atoi(os.Args[2])
 	if err != nil || lineNumber < 1 {
 		fmt.Println("Invalid line number")
-		return
-	}
-
-	// Read endpoints from file
-	endpoints, err := readEndpoints(endpointsFile)
-	if err != nil {
+	} else if endpoints, err = readEndpoints(endpointsFile); err != nil {
 		fmt.Println("Error reading endpoints:", err)
-		return
-	}
-
-	n := len(endpoints)
-
-	if lineNumber > n {
+	} else if lineNumber > len(endpoints) {
 		fmt.Printf("Line number %d out of range\n", lineNumber)
-		return
+		err = errors.New("Line number out of range")
 	}
+	return endpoints, lineNumber, err
+}
 
-	// Get the endpoint for this process
-	localEndpoint := endpoints[lineNumber-1]
-	listener, err := net.Listen("tcp", localEndpoint)
-	if err != nil {
-		fmt.Println("Error creating listener:", err)
-		return
-	}
-
-	fmt.Println("Listening on", localEndpoint)
-
-	// Barrier synchronization
-	var mu sync.Mutex
-	quitChannel := make(chan bool)
-	receivedMap := make(map[string]bool)
-	barrierChan := make(chan bool)
-
-	// Start accepting connections
-	go func() {
-		for {
-			select {
-			case <-quitChannel:
-				fmt.Println("Stopping the listener...")
-				break
-			default:
-				conn, err := listener.Accept()
-				if err != nil {
-					fmt.Println("Error accepting connection:", err)
-					continue
-				}
-				go handleConnection(conn, barrierChan, &receivedMap, &mu, n)
+func acceptAndHandleConnections(listener net.Listener, quitChannel chan bool,
+	barrierChan chan bool, receivedMap *map[string]bool, mu *sync.Mutex) {
+	var n int // Inicializar contador de conexiones
+	for {
+		select {
+		case <-quitChannel:
+			fmt.Println("Stopping the listener...")
+			break
+		default:
+			conn, err := listener.Accept()
+			if err != nil {
+				fmt.Println("Error accepting connection:", err)
+				continue
 			}
+			n++ // Incrementa el contador para cada conexión
+			go handleConnection(conn, barrierChan, receivedMap, mu, n)
 		}
-	}()
+	}
+}
 
-	// Notify other processes
-	for i, ep := range endpoints {
+func notifyOtherDistributedProcesses(endPoints []string, lineNumber int) {
+	for i, ep := range endPoints {
 		if i+1 != lineNumber {
 			go func(ep string) {
 				for {
@@ -133,6 +109,31 @@ func main() {
 			}(ep)
 		}
 	}
-	fmt.Println("Waiting for all the processes to reach the barrier")
-	listener.Close()
+}
+
+func main() {
+	var listener net.Listener
+
+	if len(os.Args) != 3 {
+		fmt.Println("Usage: go run main.go <endpoints_file> <line_number>")
+	} else if endPoints, lineNumber, err := getEndpoints(); err != nil {
+		// Get the endpoint for current process
+		localEndpoint := endPoints[lineNumber-1]
+		if listener, err = net.Listen("tcp", localEndpoint); err != nil {
+			fmt.Println("Error creating listener:", err)
+		} else {
+			fmt.Println("Listening on", localEndpoint)
+			// Barrier synchronization
+			var mu sync.Mutex
+			quitChannel := make(chan bool)
+			receivedMap := make(map[string]bool)
+			barrierChan := make(chan bool)
+
+			go acceptAndHandleConnections(listener, quitChannel, barrierChan,
+				&receivedMap, &mu)
+			notifyOtherDistributedProcesses(endPoints, lineNumber)
+			fmt.Println("Waiting for all the processes to reach the barrier")
+			listener.Close()
+		}
+	}
 }

@@ -13,13 +13,13 @@ func measureTCPDial(serverAddr string) {
 	fmt.Println("Attempting to connect to server (expecting failure)...")
 	start := time.Now()
 	conn, err := net.Dial("tcp", serverAddr)
+	duration := time.Since(start)
 	if err != nil {
 		fmt.Printf("Failed to connect: %v\n", err)
 	} else {
 		fmt.Println("Connected successfully")
 		conn.Close()
 	}
-	duration := time.Since(start)
 	fmt.Printf("Failed Dial took: %v\n", duration)
 
 	// Wait for server to start
