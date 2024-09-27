@@ -18,29 +18,6 @@ import (
 	"runtime"
 )
 
-// PRE: verdad = !foundDivisor
-// POST: Returns true if n is prime
-func isPrime(n int) (foundDivisor bool) {
-	foundDivisor = false
-	for i := 2; (i < n) && !foundDivisor; i++ {
-		foundDivisor = (n%i == 0)
-	}
-	return !foundDivisor
-}
-
-// PRE: interval.A < interval.B
-// POST: FindPrimes devuelve todos los números primos comprendidos en el
-//
-//	intervalo [interval.A, interval.B]
-func findPrimes(interval com.TPInterval) (primes []int) {
-	for i := interval.Min; i <= interval.Max; i++ {
-		if isPrime(i) {
-			primes = append(primes, i)
-		}
-	}
-	return primes
-}
-
 //Gets called every time a request is received
 func requestsHandler(id int, connectionsChan chan net.Conn) {
 	var request com.Request
@@ -68,16 +45,12 @@ func main() {
 	com.CheckError(err)
 
 	log.SetFlags(log.Lshortfile | log.Lmicroseconds)
-
-	// Get the number of logical CPUs (threads)
-	//We'll use this number to launch a pool of goroutines
-    phisicalThreads := runtime.NumCPU()
+	
+	//Contains the connection object created from clients' requests
 	connectionsChan := make(chan net.Conn)
+	//Contains 
+	freeWorkersChan := make(chan net.Conn)
 
-	for i := 0; i<phisicalThreads; i++ {
-		go requestsHandler(i, connectionsChan)
-	}
-		 
 	log.Println("***** Listening for new connection in endpoint ", endpoint)
 	for {
 		conn, err := listener.Accept()
