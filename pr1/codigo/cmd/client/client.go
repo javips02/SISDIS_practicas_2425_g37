@@ -15,6 +15,7 @@ import (
 	"os"
 	"practica1/com"
 	"time"
+	"fmt"
 )
 
 func sendEnd(endpoint string) {
@@ -41,7 +42,7 @@ func sendRequest(
 	id int,
 	interval com.TPInterval,
 	requestTimeChan chan com.TimeCommEvent,
-	replayTimeChan chan com.TimeCommEvent,
+	replyTimeChan chan com.TimeCommEvent,
 ) {
 
 	conn, err := net.Dial("tcp", endpoint)
@@ -56,7 +57,7 @@ func sendRequest(
 	com.CheckError(err)
 
 	requestTimeChan <- timeRequest
-	go receiveReply(conn, replayTimeChan)
+	go receiveReply(conn, replyTimeChan)
 }
 
 // handleRequests es una Goroutine que garantiza el acceso en exclusión mutua
@@ -66,24 +67,36 @@ func sendRequest(
 // El objetivo es que el cliente pueda calcular, para cada petición, cuál es el
 // tiempo total desde que seenvía hasta que se recibe.
 // Las peticiones le llegan a la goroutine a través del canal requestTimeChan.
-// Por el canal replayTimeChan se indica que ha llegado una respuesta de una petición.
+// Por el canal replyTimeChan se indica que ha llegado una respuesta de una petición.
 // En la respuesta, se obtiene también el timestamp de la recepción.
 // Antes de eliminar una petición se imprime por la salida estándar el id de
 // una petición y el tiempo transcurrido, observado por el cliente
 // (tiempo de transmisión + tiempo de overheads + tiempo de ejecución efectivo)
-func handleRequestsDelays(requestTimeChan chan com.TimeCommEvent, replayTimeChan chan com.TimeCommEvent) {
+func handleRequestsDelays(requestTimeChan chan com.TimeCommEvent, replyTimeChan chan com.TimeCommEvent) {
+	//output.txt file for GNUPlot
+	outFile, err := os.Create("output.txt")
+	defer outFile.Close()
+    if err != nil {
+        fmt.Println("Error creating the file:", err)
+        return
+    }
+	var printedRequests = 0
+	var elapsedT time.Duration
 	requestsTimes := make(map[int]time.Time)
 	for {
 		select {
 		case timeRequest := <-requestTimeChan:
 			requestsTimes[timeRequest.Id] = timeRequest.T
-		case timeReplay := <-replayTimeChan:
+		case timereply := <-replyTimeChan:
 			log.SetFlags(log.Lshortfile | log.Lmicroseconds)
+			elapsedT = timereply.T.Sub(requestsTimes[timereply.Id])
 			log.Println("-> Delay : ",
-				timeReplay.T.Sub(requestsTimes[timeReplay.Id]),
-				", between request ", timeReplay.Id,
+				elapsedT,
+				", between request ", timereply.Id,
 				" and its reply")
-			delete(requestsTimes, timeReplay.Id)
+			fmt.Fprintln(outFile, printedRequests, " ", elapsedT)
+			printedRequests++;
+			delete(requestsTimes, timereply.Id)
 		}
 	}
 }
@@ -98,18 +111,18 @@ func handleRequestsDelays(requestTimeChan chan com.TimeCommEvent, replayTimeChan
 // (handleRequests) y que controla los accesos a través de canales síncronos.
 // En este caso, se añade una nueva petición a la estructura de datos mediante
 // el canal requestTimeChan
-func receiveReply(conn net.Conn, replayTimeChan chan com.TimeCommEvent) {
+func receiveReply(conn net.Conn, replyTimeChan chan com.TimeCommEvent) {
 	var reply com.Reply
 	decoder := gob.NewDecoder(conn)
 	err := decoder.Decode(&reply) //  receive reply
 	com.CheckError(err)
-	timeReplay := com.TimeCommEvent{Id: reply.Id, T: time.Now()}
+	timereply := com.TimeCommEvent{Id: reply.Id, T: time.Now()}
 
 	/* log.SetFlags(log.Lshortfile | log.Lmicroseconds)
 	log.Println("Client receive reply for request Id  with resulting Primes =\n",
 		reply) */
 
-	replayTimeChan <- timeReplay
+	replyTimeChan <- timereply
 
 	conn.Close()
 }
@@ -122,9 +135,9 @@ func main() {
 	}
 	endpoint := args[1]
 	requestTimeChan := make(chan com.TimeCommEvent)
-	replayTimeChan := make(chan com.TimeCommEvent)
-
-	go handleRequestsDelays(requestTimeChan, replayTimeChan)
+	replyTimeChan := make(chan com.TimeCommEvent)
+    
+	go handleRequestsDelays(requestTimeChan, replyTimeChan)
 
 	numIt := 10
 	requestTmp := 6
@@ -134,7 +147,7 @@ func main() {
 	for i := 0; i < numIt; i++ {
 		for t := 1; t <= requestTmp; t++ {
 			sendRequest(endpoint,
-				i*requestTmp+t, interval, requestTimeChan, replayTimeChan)
+				i*requestTmp+t, interval, requestTimeChan, replyTimeChan)
 		}
 		time.Sleep(time.Duration(tts) * time.Millisecond)
 	}
