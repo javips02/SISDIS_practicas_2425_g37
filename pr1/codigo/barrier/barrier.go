@@ -48,7 +48,7 @@ func handleConnection(conn net.Conn, barrierChan chan<- bool, received *map[stri
 	mu.Lock()                                             // gets lock for mutex "mu" to avoid race conditions
 	(*received)[msg] = true                               //sends msg through recieved channel
 	fmt.Println("Received ", len(*received), " elements") //prints info
-	if len(*received) == n-1 {                            //check if I'm the last one
+	if len(*received) == n-1 {                            //check if I have received msgs from all other processes connected to me
 		barrierChan <- true // tell barrier to "lift" so the processes can proceed
 	}
 	mu.Unlock() // free lock to let others access the critical section
@@ -74,12 +74,14 @@ func getEndpoints() ([]string, int, error) {
 // Accept connections
 // barrierChan: chan to indicate whether the conditions have been met on all nodes
 func acceptAndHandleConnections(listener net.Listener, quitChannel chan bool,
-	barrierChan chan bool, receivedMap *map[string]bool, mu *sync.Mutex) {
+	barrierChan chan bool, receivedMap *map[string]bool, mu *sync.Mutex, totalNodes int) {
 	var n int // Connection counter initialisation
 	for {     // infinite loop (until break ofc)
 		select {
 		case <-quitChannel: //if recieved signal in quitChannel just stop loop and exit
-			fmt.Println("Stopping the listener...")
+			fmt.Println("Recieved quitChannel signal, Stopping the listener...")
+			close(quitChannel)
+			listener.Close()
 			break
 		default:
 			conn, err := listener.Accept() //accept new connection
@@ -87,8 +89,9 @@ func acceptAndHandleConnections(listener net.Listener, quitChannel chan bool,
 				fmt.Println("Error accepting connection:", err)
 				continue
 			}
-			n++                                                        // Increment connection counter
-			go handleConnection(conn, barrierChan, receivedMap, mu, n) //goroutine to handle conn (new go thread)
+			n++ // Increment connection counter
+			//go handleConnection(conn, barrierChan, receivedMap, mu, n) // goroutine to handle conn (new go thread)
+			go handleConnection(conn, barrierChan, receivedMap, mu, totalNodes) // goroutine to handle conn (new go thread)
 		}
 	}
 }
@@ -122,12 +125,14 @@ func notifyOtherDistributedProcesses(endPoints []string, lineNumber int) {
 
 func main() {
 	var listener net.Listener //declare listener
-
 	if len(os.Args) != 3 {
 		fmt.Println("Usage: go run main.go <endpoints_file> <line_number>")
 	} else if endPoints, lineNumber, err := getEndpoints(); err != nil {
+		fmt.Println("Error getting endpoints:", err)
+	} else {
 		// Get the endpoint for current process
 		localEndpoint := endPoints[lineNumber-1]
+
 		//Here we have in the host a list of endpoints as strings (same in all hosts or else won't work)
 		if listener, err = net.Listen("tcp", localEndpoint); err != nil {
 			fmt.Println("Error creating listener:", err)
@@ -140,11 +145,20 @@ func main() {
 			receivedMap := make(map[string]bool) // channel to save all the recieved messages from thedifferent nodes
 			barrierChan := make(chan bool)
 
+			// Goroutine to handle connections from other processes
 			go acceptAndHandleConnections(listener, quitChannel, barrierChan,
-				&receivedMap, &mu)
+				&receivedMap, &mu, len(endPoints))
+
+			// Notify other processes
 			notifyOtherDistributedProcesses(endPoints, lineNumber)
+
+			// Wait for all processes to reach the barrier, then close listener through handleCOnnections fun
 			fmt.Println("Waiting for all the processes to reach the barrier")
-			listener.Close()
+			<-barrierChan
+			fmt.Println("All processes reached the barrier, Sending quit signal to quitChannel")
+			//close(quitChannel) //if you close channel program ends smoothly... if you try to send message through
+			//it will get hung up and never get to the handleconnection to close listener __> CHECK LATER
+			quitChannel <- true
 		}
 	}
 }
