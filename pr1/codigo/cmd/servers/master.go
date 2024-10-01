@@ -11,27 +11,39 @@ package main
 
 import (
 	"encoding/gob"
+	"fmt"
+	"io/ioutil"
 	"log"
 	"net"
 	"os"
 	"practica1/com"
-	"runtime"
-	"fmt"
-	"io/ioutil"
-	"os/exec"
 	"strings"
+	"time"
+	"bufio"
 
 	"golang.org/x/crypto/ssh"
-
-
 )
 
 func runCommandOverSSH(ip, command string) error {
+	keyPath := "/home/conte/.ssh/id_ed25519" //pvt key
+
+	// Read the private key file
+	key, err := ioutil.ReadFile(keyPath)
+	if err != nil {
+		log.Fatalf("unable to read private key: %v", err)
+	}
+
+	// Parse the private key to get a signer
+	signer, err := ssh.ParsePrivateKey(key)
+	if err != nil {
+		log.Fatalf("unable to parse private key: %v", err)
+	}
+
 	// Define SSH config
 	config := &ssh.ClientConfig{
 		User: "a847803", // Replace with your SSH username
-		auth := []ssh.AuthMethod{
-			ssh.PublicKeys(yourPrivateKeySigner),
+		Auth: []ssh.AuthMethod{
+			ssh.PublicKeys(signer),
 		},
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 	}
@@ -56,38 +68,36 @@ func runCommandOverSSH(ip, command string) error {
 		return fmt.Errorf("command execution failed: %v, output: %s", err, output)
 	}
 
-	log.Printf("Command output: %s", output)
 	return nil
 }
 
+func getEndpoints(fileName string) ([]string, error) {
+	// Open the file workers.txt
+	file, err := os.Open(fileName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open file: %v", err)
+	}
+	defer file.Close()
 
-func getEndpoints(file string) ([]string, error) {
-    // Open the file workers.txt
-    file, err := os.Open(file)
-    if err != nil {
-        return nil, fmt.Errorf("failed to open file: %v", err)
-    }
-    defer file.Close()
+	// Create a slice to store endpoints
+	var endpoints []string
 
-    // Create a slice to store endpoints
-    var endpoints []string
+	// Use bufio scanner to read the file line by line
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		// Append each line (an endpoint) to the slice
+		endpoints = append(endpoints, scanner.Text())
+	}
 
-    // Use bufio scanner to read the file line by line
-    scanner := bufio.NewScanner(file)
-    for scanner.Scan() {
-        // Append each line (an endpoint) to the slice
-        endpoints = append(endpoints, scanner.Text())
-    }
+	// Check if there were any errors while reading the file
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("error reading file: %v", err)
+	}
 
-    // Check if there were any errors while reading the file
-    if err := scanner.Err(); err != nil {
-        return nil, fmt.Errorf("error reading file: %v", err)
-    }
-
-    return endpoints, nil
+	return endpoints, nil
 }
 
-func startWorkers(endpoints []string, connectionsChan chan string) {
+func startWorkers(endpoints []string, connectionsChan chan net.Conn) {
 	for _, endpoint := range endpoints {
 		// Split the endpoint into IP and port
 		parts := strings.Split(endpoint, ":")
@@ -95,38 +105,61 @@ func startWorkers(endpoints []string, connectionsChan chan string) {
 			log.Printf("Invalid endpoint format: %s", endpoint)
 			continue
 		}
-		
-		ip := parts[0]
-		port := parts[1]
-		go worker(ip, port, connectionsChan)
+
+		worker_ip := parts[0]
+		worker_port := parts[1]
+		go worker(worker_ip, worker_port, connectionsChan)
 	}
 }
 
-// Run worker via SSH
-func worker (ip string, port string, connectionsChan chan net.Conn) {
-	cmd := fmt.Sprintf("go run worker.go %s %s", ip, port)
-	err := runCommandOverSSH(ip, cmd)
+// Start worker via SSH, listen for its connection and then
+// send tasks to receive results
+func worker(
+	worker_ip string,
+	worker_port string,
+	connectionsChan chan net.Conn) {
+	endpoint := worker_ip + ":" + worker_port
+	cmd := fmt.Sprintf("go run worker.go %s %s", worker_ip, worker_port)
+	err := runCommandOverSSH(worker_ip, cmd)
 	if err != nil {
-		log.Printf("Failed to start worker at %s:%s: %v", ip, port, err)
+		log.Printf("Failed to start worker at %s:%s: %v", worker_ip, worker_port, err)
+		return
 	} else {
-		log.Printf("Worker started at %s:%s", ip, port)
+		log.Printf("Worker started at %s:%s", worker_ip, worker_port)
 	}
-}
+	time.Sleep(2 * time.Second)
+	worker_conn, err := net.Dial("tcp", endpoint)
+	com.CheckError(err)
+	
+	worker_encoder := gob.NewEncoder(worker_conn)
+	worker_decoder := gob.NewDecoder(worker_conn)
 
-//Gets called every time a request is received
-func requestsHandler(id int, connectionsChan chan net.Conn) {
-	var request com.Request
 	for {
+		//Reading pending conn and parsing request 
 		conn := <- connectionsChan
+		var request com.Request
 		decoder := gob.NewDecoder(conn)
 		err := decoder.Decode(&request)
 		com.CheckError(err)
-		primes := findPrimes(request.Interval)
-		reply := com.Reply{Id: request.Id, Primes: primes}
+
+		//Sending request to worker
+		err = worker_encoder.Encode(request)
+		com.CheckError(err)
+
+		//Getting response to worker
+		var reply com.Reply
+		err = worker_decoder.Decode(&reply)
+		com.CheckError(err)
+		
+		//Sending response to client
 		encoder := gob.NewEncoder(conn)
 		encoder.Encode(&reply)
-		conn.Close()
 	}
+
+
+
+	
+
 }
 
 func main() {
@@ -140,11 +173,12 @@ func main() {
 	com.CheckError(err)
 
 	log.SetFlags(log.Lshortfile | log.Lmicroseconds)
-	
+
 	//Contains the connection object created from clients' requests
 	connectionsChan := make(chan net.Conn)
 
-	if endPoints, err := getEndpoints("workers.txt"); err != nil {
+	var endPoints []string
+	if endPoints, err = getEndpoints("workers.txt"); err != nil {
 		log.Println("Error: can't read workers.txt file")
 		os.Exit(1)
 	}
