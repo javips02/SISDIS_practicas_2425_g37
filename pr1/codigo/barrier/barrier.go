@@ -78,11 +78,9 @@ func acceptAndHandleConnections(listener net.Listener, quitChannel chan bool,
 	var n int // Connection counter initialisation
 	for {     // infinite loop (until break ofc)
 		select {
-		case <-quitChannel: //if recieved signal in quitChannel just stop loop and exit
+		case <-quitChannel: //if recieved signal just stop loop and exit
 			fmt.Println("Recieved quitChannel signal, Stopping the listener...")
-			close(quitChannel)
-			listener.Close()
-			break
+			return
 		default:
 			conn, err := listener.Accept() //accept new connection
 			if err != nil {
@@ -98,10 +96,12 @@ func acceptAndHandleConnections(listener net.Listener, quitChannel chan bool,
 
 // send msg to all processes except for the one in line "lineNumber"
 // Why? we exclude our process bc info is already on local
-func notifyOtherDistributedProcesses(endPoints []string, lineNumber int) {
+func notifyOtherDistributedProcesses(endPoints []string, lineNumber int, wg *sync.WaitGroup) {
 	for i, ep := range endPoints {
 		if i+1 != lineNumber {
+			wg.Add(1)            // Incrementar el contador del WaitGroup
 			go func(ep string) { // new go thread for each process to be notified
+				defer wg.Done() // Asegurar que se decrementa al finalizar
 				for {
 					conn, err := net.Dial("tcp", ep) // keep dialing with 1 second pauses until found
 					if err != nil {
@@ -144,21 +144,28 @@ func main() {
 			quitChannel := make(chan bool)       //Channel to indicate when to stop the listener
 			receivedMap := make(map[string]bool) // channel to save all the recieved messages from thedifferent nodes
 			barrierChan := make(chan bool)
-
+			var wg sync.WaitGroup // Declarar WaitGroup
 			// Goroutine to handle connections from other processes
 			go acceptAndHandleConnections(listener, quitChannel, barrierChan,
 				&receivedMap, &mu, len(endPoints))
 
 			// Notify other processes
-			notifyOtherDistributedProcesses(endPoints, lineNumber)
+			notifyOtherDistributedProcesses(endPoints, lineNumber, &wg)
 
 			// Wait for all processes to reach the barrier, then close listener through handleCOnnections fun
 			fmt.Println("Waiting for all the processes to reach the barrier")
-			<-barrierChan
+			<-barrierChan //locked till message passes through
 			fmt.Println("All processes reached the barrier, Sending quit signal to quitChannel")
-			//close(quitChannel) //if you close channel program ends smoothly... if you try to send message through
-			//it will get hung up and never get to the handleconnection to close listener __> CHECK LATER
+
+			// wait till all messages are SENT (barrierChan is for recieved only)
+			//we need to make sure everything is sent in order for the others to finish
+			wg.Wait()
+
+			//close the listener and free up the for loop listening to accept more for iterations
+			//this way we can process quitChannel message
+			listener.Close()
 			quitChannel <- true
+
 		}
 	}
 }
