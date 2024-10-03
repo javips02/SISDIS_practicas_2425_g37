@@ -131,27 +131,20 @@ func worker(
 	worker_decoder := gob.NewDecoder(worker_conn)
 
 	for {
-		//Reading pending conn and parsing request 
-		conn := <- connectionsChan
-		log.Printf("Read conn in worker", worker_ip, worker_port)
 		var request com.Request
-		decoder := gob.NewDecoder(conn)
-		err := decoder.Decode(&request)
+		conn := <- connectionsChan
+		client_decoder := gob.NewDecoder(conn)
+		err := client_decoder.Decode(&request)
 		com.CheckError(err)
 
-		//Sending request to worker
-		err = worker_encoder.Encode(request)
-		com.CheckError(err)
-		log.Printf("Sent request to worker")
-		//Getting response to worker
+		worker_encoder.Encode(request)
 		var reply com.Reply
-		err = worker_decoder.Decode(&reply)
-		com.CheckError(err)
-		log.Printf("Received response from worker")
-		//Sending response to client
-		encoder := gob.NewEncoder(conn)
-		encoder.Encode(&reply)
-		log.Printf("Sent response to client")
+		worker_decoder.Decode(&reply)
+
+		client_encoder := gob.NewEncoder(conn)
+		client_encoder.Encode(&reply)
+		
+		conn.Close()
 	}
 }
 

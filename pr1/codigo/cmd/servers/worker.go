@@ -45,12 +45,19 @@ func findPrimes(interval com.TPInterval) (primes []int) {
 func requestsHandler(
 	id int, 
 	requestChan chan com.Request,
-	encoder *gob.Encoder) {
-	var request com.Request
+	replyChan chan com.Reply) {
+	
 	for {
-		request = <- requestChan
+		request := <-requestChan
 		primes := findPrimes(request.Interval)
 		reply := com.Reply{Id: request.Id, Primes: primes}
+		replyChan <- reply
+	}
+}
+
+func sendRepliesToMaster(encoder *gob.Encoder, replyChan chan com.Reply) {
+	for {
+		reply := <- replyChan
 		encoder.Encode(&reply)
 	}
 }
@@ -71,22 +78,24 @@ func main() {
 	//We'll use this number to launch a pool of goroutines
     phisicalThreads := runtime.NumCPU()
 	requestChan := make(chan com.Request)
+	replyChan := make(chan com.Reply)
 
 	var encoder *gob.Encoder
 	var decoder *gob.Decoder
 	phisicalThreads = 1
 	for i := 0; i<phisicalThreads; i++ {
-		go requestsHandler(i, requestChan, encoder)
+		go requestsHandler(i, requestChan, replyChan)
 	}
 	
 
 	log.Println("***** Listening for new connection in endpoint ", endpoint)
 	conn, err := listener.Accept()
+	decoder = gob.NewDecoder(conn)
+	encoder = gob.NewEncoder(conn)
+	go sendRepliesToMaster(encoder, replyChan)
 	com.CheckError(err)
-	var request com.Request
 	for {
-		decoder = gob.NewDecoder(conn)
-		encoder = gob.NewEncoder(conn)
+		var request com.Request
 		err := decoder.Decode(&request)
 		com.CheckError(err)
 		requestChan <- request
