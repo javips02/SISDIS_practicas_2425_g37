@@ -42,25 +42,23 @@ func findPrimes(interval com.TPInterval) (primes []int) {
 }
 
 //Gets called every time a request is received
-func requestsHandler(id int, connectionsChan chan net.Conn) {
+func requestsHandler(
+	id int, 
+	requestChan chan com.Request,
+	encoder *gob.Encoder) {
 	var request com.Request
 	for {
-		conn := <- connectionsChan
-		decoder := gob.NewDecoder(conn)
-		err := decoder.Decode(&request)
-		com.CheckError(err)
+		request = <- requestChan
 		primes := findPrimes(request.Interval)
 		reply := com.Reply{Id: request.Id, Primes: primes}
-		encoder := gob.NewEncoder(conn)
 		encoder.Encode(&reply)
-		conn.Close()
 	}
 }
 
 func main() {
 	args := os.Args
 	if len(args) != 2 {
-		log.Println("Error: endpoint missing: go run server.go ip:port")
+		log.Println("Error: endpoint missing: go run worker.go ip:port")
 		os.Exit(1)
 	}
 	endpoint := args[1]
@@ -72,17 +70,25 @@ func main() {
 	// Get the number of logical CPUs (threads)
 	//We'll use this number to launch a pool of goroutines
     phisicalThreads := runtime.NumCPU()
-	connectionsChan := make(chan net.Conn)
+	requestChan := make(chan com.Request)
 
+	var encoder *gob.Encoder
+	var decoder *gob.Decoder
+	phisicalThreads = 1
 	for i := 0; i<phisicalThreads; i++ {
-		go requestsHandler(i, connectionsChan)
+		go requestsHandler(i, requestChan, encoder)
 	}
-		 
-	log.Println("***** Listening for new connection in endpoint ", endpoint)
-	for {
-		conn, err := listener.Accept()
-		com.CheckError(err)
-		connectionsChan <- conn
+	
 
+	log.Println("***** Listening for new connection in endpoint ", endpoint)
+	conn, err := listener.Accept()
+	com.CheckError(err)
+	var request com.Request
+	for {
+		decoder = gob.NewDecoder(conn)
+		encoder = gob.NewEncoder(conn)
+		err := decoder.Decode(&request)
+		com.CheckError(err)
+		requestChan <- request
 	}
 }

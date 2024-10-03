@@ -41,7 +41,7 @@ func runCommandOverSSH(ip, command string) error {
 
 	// Define SSH config
 	config := &ssh.ClientConfig{
-		User: "a847803", // Replace with your SSH username
+		User: "conte", // Replace with your SSH username
 		Auth: []ssh.AuthMethod{
 			ssh.PublicKeys(signer),
 		},
@@ -53,21 +53,21 @@ func runCommandOverSSH(ip, command string) error {
 	if err != nil {
 		return fmt.Errorf("failed to dial SSH: %v", err)
 	}
-	defer client.Close()
 
 	// Create a new session
 	session, err := client.NewSession()
 	if err != nil {
 		return fmt.Errorf("failed to create SSH session: %v", err)
 	}
-	defer session.Close()
 
 	// Execute the command
 	output, err := session.CombinedOutput(command)
 	if err != nil {
 		return fmt.Errorf("command execution failed: %v, output: %s", err, output)
 	}
-
+	log.Printf("Closing stuff")
+	client.Close()
+	session.Close()
 	return nil
 }
 
@@ -119,24 +119,21 @@ func worker(
 	worker_port string,
 	connectionsChan chan net.Conn) {
 	endpoint := worker_ip + ":" + worker_port
-	cmd := fmt.Sprintf("go run worker.go %s %s", worker_ip, worker_port)
-	err := runCommandOverSSH(worker_ip, cmd)
-	if err != nil {
-		log.Printf("Failed to start worker at %s:%s: %v", worker_ip, worker_port, err)
-		return
-	} else {
-		log.Printf("Worker started at %s:%s", worker_ip, worker_port)
-	}
+	cmd := fmt.Sprintf("cd /home/conte/Desktop/Lezioni/SSDD/SISDIS_practicas_2425_g37/pr1/codigo/cmd/servers/ && go run worker.go %s:%s", worker_ip, worker_port)
+	log.Printf("Starting worker at %s:%s, if no error is printed ssh command is successful", worker_ip, worker_port)
+	go runCommandOverSSH(worker_ip, cmd)
+
 	time.Sleep(2 * time.Second)
 	worker_conn, err := net.Dial("tcp", endpoint)
 	com.CheckError(err)
-	
+	log.Printf("TCP ok at %s:%s", worker_ip, worker_port)
 	worker_encoder := gob.NewEncoder(worker_conn)
 	worker_decoder := gob.NewDecoder(worker_conn)
 
 	for {
 		//Reading pending conn and parsing request 
 		conn := <- connectionsChan
+		log.Printf("Read conn in worker", worker_ip, worker_port)
 		var request com.Request
 		decoder := gob.NewDecoder(conn)
 		err := decoder.Decode(&request)
@@ -145,21 +142,17 @@ func worker(
 		//Sending request to worker
 		err = worker_encoder.Encode(request)
 		com.CheckError(err)
-
+		log.Printf("Sent request to worker")
 		//Getting response to worker
 		var reply com.Reply
 		err = worker_decoder.Decode(&reply)
 		com.CheckError(err)
-		
+		log.Printf("Received response from worker")
 		//Sending response to client
 		encoder := gob.NewEncoder(conn)
 		encoder.Encode(&reply)
+		log.Printf("Sent response to client")
 	}
-
-
-
-	
-
 }
 
 func main() {
@@ -183,7 +176,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	startWorkers(endPoints, connectionsChan)
+	go startWorkers(endPoints, connectionsChan)
 
 	log.Println("***** Listening for new connection in endpoint ", endpoint)
 	//In here we wait for all clients requests and put them in connectionsChan
