@@ -10,6 +10,7 @@
 package main
 
 import (
+	"bufio"
 	"encoding/gob"
 	"fmt"
 	"io/ioutil"
@@ -19,13 +20,12 @@ import (
 	"practica1/com"
 	"strings"
 	"time"
-	"bufio"
 
 	"golang.org/x/crypto/ssh"
 )
 
 func runCommandOverSSH(ip, command string) error {
-	keyPath := "/home/conte/.ssh/id_ed25519" //pvt key
+	keyPath := "/home/a815877/.ssh/id_ed25519" //pvt key
 
 	// Read the private key file
 	key, err := ioutil.ReadFile(keyPath)
@@ -41,7 +41,7 @@ func runCommandOverSSH(ip, command string) error {
 
 	// Define SSH config
 	config := &ssh.ClientConfig{
-		User: "conte", // Replace with your SSH username
+		User: "a815877", // Replace with your SSH username
 		Auth: []ssh.AuthMethod{
 			ssh.PublicKeys(signer),
 		},
@@ -119,7 +119,7 @@ func worker(
 	worker_port string,
 	connectionsChan chan net.Conn) {
 	endpoint := worker_ip + ":" + worker_port
-	cmd := fmt.Sprintf("cd /home/conte/Desktop/Lezioni/SSDD/SISDIS_practicas_2425_g37/pr1/codigo/cmd/servers/ && go run worker.go %s:%s", worker_ip, worker_port)
+	cmd := fmt.Sprintf("cd cd /misc/alumnos/sd/sd2425/a815877/cmd/servers && go run worker.go %s:%s", worker_ip, worker_port)
 	log.Printf("Starting worker at %s:%s, if no error is printed ssh command is successful", worker_ip, worker_port)
 	go runCommandOverSSH(worker_ip, cmd)
 
@@ -132,7 +132,7 @@ func worker(
 
 	for {
 		var request com.Request
-		conn := <- connectionsChan
+		conn := <-connectionsChan
 		client_decoder := gob.NewDecoder(conn)
 		err := client_decoder.Decode(&request)
 		com.CheckError(err)
@@ -143,7 +143,7 @@ func worker(
 
 		client_encoder := gob.NewEncoder(conn)
 		client_encoder.Encode(&reply)
-		
+
 		conn.Close()
 	}
 }
