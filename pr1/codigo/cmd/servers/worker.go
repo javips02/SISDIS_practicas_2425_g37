@@ -82,7 +82,7 @@ func main() {
 
 	var encoder *gob.Encoder
 	var decoder *gob.Decoder
-	phisicalThreads = 1
+	//phisicalThreads = 1
 	for i := 0; i<phisicalThreads; i++ {
 		go requestsHandler(i, requestChan, replyChan)
 	}
