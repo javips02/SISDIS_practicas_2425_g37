@@ -41,11 +41,11 @@ func findPrimes(interval com.TPInterval) (primes []int) {
 	return primes
 }
 
-//Gets called every time a request is received
+// Gets called every time a request is received
 func requestsHandler(id int, connectionsChan chan net.Conn) {
 	var request com.Request
 	for {
-		conn := <- connectionsChan
+		conn := <-connectionsChan
 		decoder := gob.NewDecoder(conn)
 		err := decoder.Decode(&request)
 		com.CheckError(err)
@@ -71,13 +71,13 @@ func main() {
 
 	// Get the number of logical CPUs (threads)
 	//We'll use this number to launch a pool of goroutines
-    phisicalThreads := runtime.NumCPU()
+	phisicalThreads := runtime.NumCPU()
 	connectionsChan := make(chan net.Conn)
 
-	for i := 0; i<phisicalThreads; i++ {
+	for i := 0; i < phisicalThreads; i++ {
 		go requestsHandler(i, connectionsChan)
 	}
-		 
+
 	log.Println("***** Listening for new connection in endpoint ", endpoint)
 	for {
 		conn, err := listener.Accept()
