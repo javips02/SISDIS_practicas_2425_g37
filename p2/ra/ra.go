@@ -30,14 +30,15 @@ type RASharedDB struct {
     done        chan bool
     chrep       chan bool
     Mutex       sync.Mutex // mutex para proteger concurrencia sobre las variables
-    // TODO: completar
+    File        string
+    FileMutex   sync.Mutex
 }
 
 
 func New(me int, usersFile string) (*RASharedDB) {
     messageTypes := []Message{Request, Reply}
     msgs = ms.New(me, usersFile string, messageTypes)
-    ra := RASharedDB{0, 0, 0, false, []int{}, &msgs,  make(chan bool),  make(chan bool), &sync.Mutex{}}
+    ra := RASharedDB{0, 0, 0, false, []int{}, &msgs,  make(chan bool),  make(chan bool), &sync.Mutex{}, "", &sync.Mutex{}}
     // TODO completar
     return &ra
 }
@@ -59,4 +60,9 @@ func (ra *RASharedDB) PostProtocol(){
 func (ra *RASharedDB) Stop(){
     ra.ms.Stop()
     ra.done <- true
+}
+
+// Returns our own endpoint
+func (ra *RASharedDB) GetCurrentEndpoint(string) {
+	return ra.ms.GetCurrentEndpoint()
 }

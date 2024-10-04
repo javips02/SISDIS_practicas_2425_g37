@@ -115,3 +115,8 @@ func New(whoIam int, usersFile string, messageTypes []Message) (ms MessageSystem
 func (ms *MessageSystem) Stop() {
 	ms.done <- true
 }
+
+// Returns our own endpoint
+func (ms *MessageSystem) GetCurrentEndpoint(string) {
+	return ms.peers[me]
+}
