@@ -18,28 +18,51 @@ type Request struct{
     Pid     int
 }
 
-type Reply struct{}
+type Reply struct{
+    CharAdded   string
+}
+
+type State string
+
+// Define the enum values
+const (
+    Out    State = "out"
+    Trying State = "trying"
+    In     State = "in"
+)
 
 type RASharedDB struct {
-    OurSeqNum   int
-    HigSeqNum   int
+    SendClock       int
+    ReceiveClock    int
     OutRepCnt   int
     ReqCS       boolean
     RepDefd     bool[]
     ms          *MessageSystem
     done        chan bool
     chrep       chan bool
+    state       string
     Mutex       sync.Mutex // mutex para proteger concurrencia sobre las variables
     File        string
     FileMutex   sync.Mutex
 }
 
 
+
 func New(me int, usersFile string) (*RASharedDB) {
     messageTypes := []Message{Request, Reply}
     msgs = ms.New(me, usersFile string, messageTypes)
-    ra := RASharedDB{0, 0, 0, false, []int{}, &msgs,  make(chan bool),  make(chan bool), &sync.Mutex{}, "", &sync.Mutex{}}
-    // TODO completar
+    ra := RASharedDB{0,
+        0,
+        0,
+        false, 
+        []int{}, 
+        &msgs,  
+        make(chan bool),  
+        make(chan bool), 
+        &sync.Mutex{}, 
+        "", 
+        &sync.Mutex{}}
+    
     return &ra
 }
 
@@ -47,7 +70,12 @@ func New(me int, usersFile string) (*RASharedDB) {
 //Post: Realiza  el  PreProtocol  para el  algoritmo de
 //      Ricart-Agrawala Generalizado
 func (ra *RASharedDB) PreProtocol(){
-    // TODO completar
+    ra.Mutex.Lock()
+    ra.SendClock = ra.ReceiveClock + 1
+    sendClock := ra.SendClock
+    request := Request{ra.SendClock, ra.ms.Me}
+    ra.Mutex.Unlock()
+    ms.SendAll(request)
 }
 
 //Pre: Verdad

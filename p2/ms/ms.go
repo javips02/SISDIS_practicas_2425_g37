@@ -20,9 +20,9 @@ type Message interface{}
 
 type MessageSystem struct {
 	mbox  chan Message
-	peers []string
+	Peers []string
 	done  chan bool
-	me    int
+	Me    int
 }
 
 const (
@@ -56,6 +56,17 @@ func (ms *MessageSystem) Send(pid int, msg Message) {
 	encoder := gob.NewEncoder(conn)
 	err = encoder.Encode(&msg)
 	conn.Close()
+}
+
+// Pre: pid en {1..n}, el conjunto de procesos del SD
+// Post: envía el mensaje msg a pid
+func (ms *MessageSystem) SendAll(msg Message) {
+	for i := 0; i < len(ms.peers); i++ {
+		if(i != ms.Me) {
+			go Send(i, msg)
+		}
+        
+    }
 }
 
 // Pre: True
