@@ -1,9 +1,13 @@
 package main
 
 import (
-	"ra"
 	"fmt"
+	"log"
 	"math/rand"
+	"os"
+	"practica2/com"
+	"practica2/ra"
+	"strconv"
 	"time"
 )
 
@@ -25,12 +29,10 @@ func randomChar() string {
 	return string(byte(rand.Intn(selectedRange.max-selectedRange.min+1) + selectedRange.min))
 }
 
-//Every second there is a 10% chance that a new Read or Write operation is created
-func taskCreator(ra *RASharedDB){
+// Every second there is a 10% chance that a new Read or Write operation is created
+func taskCreator(ra *ra.RASharedDB) {
 
-	string file = ""
-
-	rand.Seed(time.Now().UnixNano())
+	rand.Seed(0)
 
 	// Create a ticker that ticks every second
 	ticker := time.NewTicker(1 * time.Second)
@@ -39,31 +41,28 @@ func taskCreator(ra *RASharedDB){
 	for range ticker.C {
 		if rand.Intn(10) == 0 {
 			if rand.Intn(2) == 0 {
-				caracterCasual :=
-				go writeOperation(ra)
+				writeOperation(ra)
 			} else {
-				go readOperation(ra)
+				readOperation(ra)
 			}
 		}
 	}
 }
 
-func writeOperation(ra *RASharedDB, s *string){
-	string randomChar = randomChar()
+func writeOperation(ra *ra.RASharedDB) {
+	randomChar := randomChar()
 	ra.PreProtocol()
-	ra.FileMutex.Lock()
-	fmt.Println("Adding %s to %s", randomChar, *s)
-	ra.FileMutex += randomChar
-	ra.FileMutex.Unlock()
-	ra.PostProtocol()
+	fmt.Println("Adding %s to %s", randomChar, ra.File)
+	ra.File += randomChar
+	ra.PostProtocol(randomChar)
 }
 
-func readOperation(){
+func readOperation(ra *ra.RASharedDB) {
 	ra.PreProtocol()
 	ra.FileMutex.Lock()
-	fmt.Println("Read file: %s", r)
-	ra.FileMutex.Lock()
-	ra.PostProtocol()
+	fmt.Println("File is: %s", ra.File)
+	ra.FileMutex.Unlock()
+	ra.PostProtocol("")
 }
 
 func main() {
@@ -72,7 +71,9 @@ func main() {
 		log.Println("Error: id missing: go run actor.go id")
 		os.Exit(1)
 	}
-	ra = ra.New(args[1], "actors.txt")
+	pid, err := strconv.Atoi(args[1])
+	com.CheckError(err)
+	ra := ra.New(pid, "actors.txt")
 
 	go taskCreator(ra)
 }
