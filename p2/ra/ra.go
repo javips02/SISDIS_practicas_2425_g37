@@ -40,40 +40,38 @@ const (
 )
 
 type RASharedDB struct {
-	SendClock       int
-	ReceiveClock    int
+	SendClock       []int
+	ReceiveClock    []int
 	OutRepCnt       int
 	ReqCS           bool
 	receiverReplies []bool
 	ms              *ms.MessageSystem
 	done            chan bool
 	chrep           chan bool
-	state           string
+	state           State
 	mutex           sync.Mutex // mutex para proteger concurrencia sobre las variables
 	File            string
 	FileMutex       sync.Mutex
 	repliesChannel  chan Reply
 }
 
-func New(me int, usersFile string) *RASharedDB {
-	messageTypes := []ms.Message{Request, Reply}
+func New(me int, usersFile string, users []int) *RASharedDB {
+	messageTypes := []ms.Message{Request{}, Reply{}}
 	msgs := ms.New(me, usersFile, messageTypes)
 	ra := RASharedDB{
-		0,
-		0,
-		0,
-		false,
-		[]int{},
-		&msgs,
-		make(chan bool),
-		make(chan bool),
-		"out",
-		&sync.Mutex{},
-		"",
-		"",
-		&sync.Mutex{},
-		make(chan Reply)}
-
+		SendClock:       make([]int, len(users)),  // Inicializa reloj vectorial
+		ReceiveClock:    make([]int, len(users)),  // Inicializa reloj de recepción
+		OutRepCnt:       0,                        // Inicializa OutRepCnt
+		ReqCS:           false,                    // Inicializa ReqCS
+		receiverReplies: make([]bool, len(users)), // Inicializa receiverReplies como bool
+		ms:              &msgs,
+		done:            make(chan bool),
+		chrep:           make(chan bool),
+		state:           Out,          // Estado inicial
+		File:            "",           // Inicializa File como string vacío
+		FileMutex:       sync.Mutex{}, // Mutex no necesita ser referenciado
+		repliesChannel:  make(chan Reply),
+	}
 	return &ra
 }
 
