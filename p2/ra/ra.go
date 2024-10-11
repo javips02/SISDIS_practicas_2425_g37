@@ -80,24 +80,44 @@ func New(me int, usersFile string, users []int) *RASharedDB {
 //
 //	Ricart-Agrawala Generalizado
 func (ra *RASharedDB) PreProtocol() {
-
-	//Proceed
-	//(Re)set internal variables
+	// (Re)set internal variables
 	ra.mutex.Lock()
-	ra.SendClock = ra.ReceiveClock + 1
-	request := Request{ra.SendClock, ra.ms.Me}
+
+	// Incrementar el reloj vectorial
+	ra.SendClock[ra.ms.Me] = ra.ReceiveClock[ra.ms.Me] + 1
+
+	// Crear el mensaje de petición
+	request := Request{
+		Clock: ra.SendClock[ra.ms.Me],
+		Pid:   ra.ms.Me,
+	}
+	ra.ReqCS = true
+	ra.OutRepCnt = 0                                     // Reiniciar el contador de respuestas pendientes
+	ra.receiverReplies = make([]bool, len(ra.SendClock)) // Resetear las respuestas recibidas
 	ra.mutex.Unlock()
 
-	//Send message to everyone and wait for the response
+	// Enviar mensaje de petición a todos los procesos
+	// y esperar respuestas
 	ra.askForPermission(request)
 
-	//if we reach here we're in critical section and simply return to caller
-
+	// Al llegar aquí, se tiene acceso a la sección crítica
 }
 
 func (ra *RASharedDB) askForPermission(request Request) {
 	ra.ms.SendAll(request)
 	//TODO: Wait for all replies through ra.repliesChannel
+	for {
+		ra.mutex.Lock()
+		if ra.OutRepCnt == len(ra.SendClock)-1 {
+			// Si hemos recibido respuestas de todos (menos nosotros mismos), salimos del bucle
+			ra.mutex.Unlock()
+			break
+		}
+		ra.mutex.Unlock()
+
+		// Esperamos en el canal hasta que llegue una respuesta
+		<-ra.chrep
+	}
 }
 
 // Pre: Verdad
