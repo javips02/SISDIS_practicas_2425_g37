@@ -79,6 +79,7 @@ func New(me int, usersFile string, users []int) *RASharedDB {
 // Pre: Verdad
 // Post: Realiza el PreProtocol para el algoritmo de Ricart-Agrawala Generalizado
 func (ra *RASharedDB) PreProtocol() {
+	ra.state = Trying
 	// (Re)set internal variables
 	ra.mutex.Lock()
 
@@ -99,6 +100,7 @@ func (ra *RASharedDB) PreProtocol() {
 	ra.askForPermission(request)
 
 	// Al llegar aquí, se tiene acceso a la sección crítica
+	ra.state = In
 }
 
 // Envía mensaje de solicitud de entrada a la SC a todos los nodos y espera
