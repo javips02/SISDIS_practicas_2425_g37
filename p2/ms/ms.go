@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"practica2/com"
 )
 
 type Message interface{}
@@ -55,6 +56,7 @@ func (ms *MessageSystem) Send(pid int, msg Message) {
 	checkError(err)
 	encoder := gob.NewEncoder(conn)
 	err = encoder.Encode(&msg)
+	com.CheckError(err)
 	conn.Close()
 }
 
@@ -63,7 +65,7 @@ func (ms *MessageSystem) Send(pid int, msg Message) {
 func (ms *MessageSystem) SendAll(msg Message) {
 	for i := 0; i < len(ms.Peers); i++ {
 		if i != ms.Me {
-			go Send(i, msg)
+			go ms.Send(i, msg)
 		}
 
 	}
@@ -113,6 +115,7 @@ func New(whoIam int, usersFile string, messageTypes []Message) (ms MessageSystem
 				decoder := gob.NewDecoder(conn)
 				var msg Message
 				err = decoder.Decode(&msg)
+				com.CheckError(err)
 				conn.Close()
 				ms.mbox <- msg
 			}
@@ -128,6 +131,6 @@ func (ms *MessageSystem) Stop() {
 }
 
 // Returns our own endpoint
-func (ms *MessageSystem) GetCurrentEndpoint(string) {
+func (ms *MessageSystem) GetCurrentEndpoint() string {
 	return ms.Peers[ms.Me]
 }

@@ -7,6 +7,7 @@ import (
 	"os"
 	"practica2/com"
 	"practica2/ra"
+	ram "practica2/ra"
 	"strconv"
 	"time"
 )
@@ -30,7 +31,7 @@ func randomChar() string {
 }
 
 // Every second there is a 10% chance that a new Read or Write operation is created
-func taskCreator(ra *ra.RASharedDB) {
+func taskCreator(ra *ram.RASharedDB) {
 
 	rand.Seed(0)
 
@@ -49,18 +50,18 @@ func taskCreator(ra *ra.RASharedDB) {
 	}
 }
 
-func writeOperation(ra *ra.RASharedDB) {
+func writeOperation(ra *ram.RASharedDB) {
 	randomChar := randomChar()
-	ra.PreProtocol()
-	fmt.Println("Adding %s to %s", randomChar, ra.File)
+	ra.PreProtocol(ram.Write)
+	fmt.Printf("Adding %s to %s\n", randomChar, ra.File)
 	ra.File += randomChar
 	ra.PostProtocol(randomChar)
 }
 
-func readOperation(ra *ra.RASharedDB) {
-	ra.PreProtocol()
+func readOperation(ra *ram.RASharedDB) {
+	ra.PreProtocol(ram.Read)
 	ra.FileMutex.Lock()
-	fmt.Println("File is: %s", ra.File)
+	fmt.Printf("File is: %s\n", ra.File)
 	ra.FileMutex.Unlock()
 	ra.PostProtocol("")
 }
