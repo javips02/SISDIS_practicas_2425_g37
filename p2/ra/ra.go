@@ -40,8 +40,8 @@ const (
 )
 
 type RASharedDB struct {
-	SendClock       []int
-	ReceiveClock    []int
+	SendClock       int
+	ReceiveClock    int
 	OutRepCnt       int
 	ReqCS           bool
 	receiverReplies []bool
@@ -59,8 +59,8 @@ func New(me int, usersFile string, users []int) *RASharedDB {
 	messageTypes := []ms.Message{Request{}, Reply{}}
 	msgs := ms.New(me, usersFile, messageTypes)
 	ra := RASharedDB{
-		SendClock:       make([]int, len(users)),  // Inicializa reloj vectorial
-		ReceiveClock:    make([]int, len(users)),  // Inicializa reloj de recepción
+		SendClock:       0,                        // Inicializa reloj vectorial
+		ReceiveClock:    0,                        // Inicializa reloj de recepción
 		OutRepCnt:       0,                        // Inicializa OutRepCnt
 		ReqCS:           false,                    // Inicializa ReqCS
 		receiverReplies: make([]bool, len(users)), // Inicializa receiverReplies como bool
@@ -76,39 +76,39 @@ func New(me int, usersFile string, users []int) *RASharedDB {
 }
 
 // Pre: Verdad
-// Post: Realiza  el  PreProtocol  para el  algoritmo de
-//
-//	Ricart-Agrawala Generalizado
+// Post: Realiza el PreProtocol para el algoritmo de Ricart-Agrawala Generalizado
 func (ra *RASharedDB) PreProtocol() {
 	// (Re)set internal variables
 	ra.mutex.Lock()
 
-	// Incrementar el reloj vectorial
-	ra.SendClock[ra.ms.Me] = ra.ReceiveClock[ra.ms.Me] + 1
+	// Incrementar el reloj lógico
+	ra.SendClock = ra.ReceiveClock + 1
 
 	// Crear el mensaje de petición
 	request := Request{
-		Clock: ra.SendClock[ra.ms.Me],
+		Clock: ra.SendClock,
 		Pid:   ra.ms.Me,
 	}
 	ra.ReqCS = true
-	ra.OutRepCnt = 0                                     // Reiniciar el contador de respuestas pendientes
-	ra.receiverReplies = make([]bool, len(ra.SendClock)) // Resetear las respuestas recibidas
+	ra.OutRepCnt = 0 // Reiniciar el contador de respuestas pendientes
+
 	ra.mutex.Unlock()
 
-	// Enviar mensaje de petición a todos los procesos
-	// y esperar respuestas
+	// Enviar mensaje de petición a todos los procesos y esperar respuestas
 	ra.askForPermission(request)
 
 	// Al llegar aquí, se tiene acceso a la sección crítica
 }
 
+// Envía mensaje de solicitud de entrada a la SC a todos los nodos y espera
+// respuesta de todos ellos antes de entrar
 func (ra *RASharedDB) askForPermission(request Request) {
 	ra.ms.SendAll(request)
-	//TODO: Wait for all replies through ra.repliesChannel
+
+	// Esperar respuestas de todos los procesos
 	for {
 		ra.mutex.Lock()
-		if ra.OutRepCnt == len(ra.SendClock)-1 {
+		if ra.OutRepCnt == len(ra.ms.Peers)-1 { //aprovechamos el vector de peers que nos dice cuántos compañeros hay en el sisdis
 			// Si hemos recibido respuestas de todos (menos nosotros mismos), salimos del bucle
 			ra.mutex.Unlock()
 			break
