@@ -44,7 +44,8 @@ type RASharedDB struct {
 	ReceiveClock    int
 	OutRepCnt       int
 	ReqCS           bool
-	receiverReplies []bool
+	receiverReplies []bool //revisar usos
+	RepDefd         []bool
 	ms              *ms.MessageSystem
 	done            chan bool
 	chrep           chan bool
@@ -59,18 +60,18 @@ func New(me int, usersFile string, users []int) *RASharedDB {
 	messageTypes := []ms.Message{Request{}, Reply{}}
 	msgs := ms.New(me, usersFile, messageTypes)
 	ra := RASharedDB{
-		SendClock:       0,                        // Inicializa reloj vectorial
-		ReceiveClock:    0,                        // Inicializa reloj de recepción
-		OutRepCnt:       0,                        // Inicializa OutRepCnt
-		ReqCS:           false,                    // Inicializa ReqCS
-		receiverReplies: make([]bool, len(users)), // Inicializa receiverReplies como bool
-		ms:              &msgs,
-		done:            make(chan bool),
-		chrep:           make(chan bool),
-		state:           Out,          // Estado inicial
-		File:            "",           // Inicializa File como string vacío
-		FileMutex:       sync.Mutex{}, // Mutex no necesita ser referenciado
-		repliesChannel:  make(chan Reply),
+		SendClock:      0,     // Inicializa reloj vectorial
+		ReceiveClock:   0,     // Inicializa reloj de recepción
+		OutRepCnt:      0,     // Inicializa OutRepCnt
+		ReqCS:          false, // Inicializa ReqCS
+		ms:             &msgs,
+		RepDefd:        make([]bool, len(msgs.Peers)), // Inicializa con 'false' para todos los procesos
+		done:           make(chan bool),
+		chrep:          make(chan bool),
+		state:          Out,          // Estado inicial
+		File:           "",           // Inicializa File como string vacío
+		FileMutex:      sync.Mutex{}, // Mutex no necesita ser referenciado
+		repliesChannel: make(chan Reply),
 	}
 	return &ra
 }
@@ -126,7 +127,7 @@ func (ra *RASharedDB) askForPermission(request Request) {
 //	Ricart-Agrawala Generalizado
 func (ra *RASharedDB) PostProtocol(addedChar string) {
 	ra.mutex.Lock()
-	ra.state = "out"
+	ra.state = Out
 	reply := Reply{
 		ra.SendClock,
 		ra.ms.Me,
@@ -137,6 +138,15 @@ func (ra *RASharedDB) PostProtocol(addedChar string) {
 		ra.ms.SendAll(reply)
 	} else {
 		//After a read, we send Replies only to deferred peers
+		for i, val := range ra.RepDefd {
+			if val {
+				ra.ms.Send(i, reply)
+			}
+		}
+	}
+	// Now we clean deferred vector; all processes in it have been notified in this function
+	for i := range ra.RepDefd {
+		ra.RepDefd[i] = false
 	}
 }
 
