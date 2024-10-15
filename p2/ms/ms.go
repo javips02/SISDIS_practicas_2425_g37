@@ -52,7 +52,7 @@ func parsePeers(path string) (lines []string) {
 // Pre: pid en {1..n}, el conjunto de procesos del SD
 // Post: envía el mensaje msg a pid
 func (ms *MessageSystem) Send(pid int, msg Message) {
-	conn, err := net.Dial("tcp", ms.Peers[pid-1])
+	conn, err := net.Dial("tcp", ms.Peers[pid])
 	checkError(err)
 	encoder := gob.NewEncoder(conn)
 	err = encoder.Encode(&msg)
@@ -101,9 +101,9 @@ func New(whoIam int, usersFile string, messageTypes []Message) (ms MessageSystem
 	ms.done = make(chan bool)
 	Register(messageTypes)
 	go func() {
-		listener, err := net.Listen("tcp", ms.Peers[ms.Me-1])
+		listener, err := net.Listen("tcp", ms.Peers[ms.Me])
 		checkError(err)
-		fmt.Println("Process listening at " + ms.Peers[ms.Me-1])
+		fmt.Println("Process listening at " + ms.Peers[ms.Me])
 		defer close(ms.mbox)
 		for {
 			select {

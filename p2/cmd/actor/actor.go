@@ -1,12 +1,12 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"log"
 	"math/rand"
 	"os"
 	"practica2/com"
-	"practica2/ra"
 	ram "practica2/ra"
 	"strconv"
 	"time"
@@ -32,7 +32,7 @@ func randomChar() string {
 
 // Every second there is a 10% chance that a new Read or Write operation is created
 func taskCreator(ra *ram.RASharedDB) {
-
+	return
 	rand.Seed(0)
 
 	// Create a ticker that ticks every second
@@ -52,18 +52,24 @@ func taskCreator(ra *ram.RASharedDB) {
 
 func writeOperation(ra *ram.RASharedDB) {
 	randomChar := randomChar()
+	fmt.Printf("Asking for write consensus")
 	ra.PreProtocol(ram.Write)
-	fmt.Printf("Adding %s to %s\n", randomChar, ra.File)
+	fmt.Printf("Got consensus. Adding %s to %s\n", randomChar, ra.File)
+	time.Sleep(2 * time.Second)
 	ra.File += randomChar
 	ra.PostProtocol(randomChar)
+	fmt.Printf("**PostProtocol completed**\n")
 }
 
 func readOperation(ra *ram.RASharedDB) {
+	fmt.Printf("Asking for read consensus\n")
 	ra.PreProtocol(ram.Read)
 	ra.FileMutex.Lock()
 	fmt.Printf("File is: %s\n", ra.File)
+	time.Sleep(2 * time.Second)
 	ra.FileMutex.Unlock()
 	ra.PostProtocol("")
+	fmt.Printf("**PostProtocol completed**\n")
 }
 
 func main() {
@@ -74,7 +80,21 @@ func main() {
 	}
 	pid, err := strconv.Atoi(args[1])
 	com.CheckError(err)
-	ra := ra.New(pid, "actors.txt")
+	ra := ram.New(pid, "actors.txt")
 
 	go taskCreator(ra)
+
+	reader := bufio.NewReader(os.Stdin)
+	fmt.Printf("\n\nType 'r' or 'w':")
+	for {
+		input, _ := reader.ReadByte()
+		switch input {
+		case 'w':
+			writeOperation(ra)
+			fmt.Printf("\n\nType 'r' or 'w':")
+		case 'r':
+			readOperation(ra)
+			fmt.Printf("\n\nType 'r' or 'w':")
+		}
+	}
 }

@@ -9,7 +9,10 @@
 package ra
 
 import (
+	"bytes"
+	"encoding/gob"
 	"fmt"
+	"log"
 	"practica2/ms"
 	"sync"
 )
@@ -48,12 +51,11 @@ const (
 type RASharedDB struct {
 	SendClock       int
 	ReceiveClock    int
-	OutRepCnt       int
+	receivedReplies int
 	ReqCS           bool
 	deferredReplies []bool
 	ms              *ms.MessageSystem
 	done            chan bool
-	chrep           chan bool
 	state           State
 	opType          OpType
 	mutex           sync.Mutex // mutex para proteger concurrencia sobre las variables
@@ -68,15 +70,14 @@ func New(me int, usersFile string) *RASharedDB {
 	ra := RASharedDB{
 		SendClock:       0,     // Inicializa reloj vectorial
 		ReceiveClock:    0,     // Inicializa reloj de recepción
-		OutRepCnt:       0,     // Inicializa OutRepCnt
+		receivedReplies: 0,     // Inicializa receivedReplies
 		ReqCS:           false, // Inicializa ReqCS
 		ms:              &msgs,
 		deferredReplies: make([]bool, len(msgs.Peers)), // Inicializa con 'false' para todos los procesos
 		done:            make(chan bool),
-		chrep:           make(chan bool),
-		state:           Out,          // Estado inicial
-		File:            "",           // Inicializa File como string vacío
-		FileMutex:       sync.Mutex{}, // Mutex no necesita ser referenciado
+		state:           Out,            // Estado inicial
+		File:            "myFileBlaBla", // Inicializa File como string vacío
+		FileMutex:       sync.Mutex{},   // Mutex no necesita ser referenciado
 		repliesChannel:  make(chan Reply),
 	}
 	go ra.messageReceiver()
@@ -101,7 +102,7 @@ func (ra *RASharedDB) PreProtocol(opType OpType) {
 		Pid:   ra.ms.Me,
 	}
 	ra.ReqCS = true
-	ra.OutRepCnt = 0 // Reiniciar el contador de respuestas pendientes
+	ra.receivedReplies = 0 // Reiniciar el contador de respuestas pendientes
 
 	ra.mutex.Unlock()
 
@@ -115,20 +116,34 @@ func (ra *RASharedDB) PreProtocol(opType OpType) {
 // Envía mensaje de solicitud de entrada a la SC a todos los nodos y espera
 // respuesta de todos ellos antes de entrar
 func (ra *RASharedDB) askForPermission(request Request) {
+	//Set it to 0 because while we were out of CS maybe someone sent us an after write update
+	ra.mutex.Lock()
+	ra.receivedReplies = 0
+	ra.mutex.Unlock()
+
 	ra.ms.SendAll(request)
 
 	// Esperar respuestas de todos los procesos
 	for {
+
+		// Esperamos en el canal hasta que llegue una respuesta
+		<-ra.repliesChannel
+
 		ra.mutex.Lock()
-		if ra.OutRepCnt == len(ra.ms.Peers)-1 { //aprovechamos el vector de peers que nos dice cuántos compañeros hay en el sisdis
+
+		ra.receivedReplies++
+
+		if ra.receivedReplies == len(ra.ms.Peers)-1 { //aprovechamos el vector de peers que nos dice cuántos compañeros hay en el sisdis
 			// Si hemos recibido respuestas de todos (menos nosotros mismos), salimos del bucle
+			fmt.Printf("Got all replies, entering CS\n")
 			break
+		} else {
+			fmt.Printf("Got reply %d of %d\n", ra.receivedReplies, len(ra.ms.Peers)-1)
 		}
 		ra.mutex.Unlock()
 
-		// Esperamos en el canal hasta que llegue una respuesta
-		<-ra.chrep
 	}
+
 	ra.state = In
 	ra.mutex.Unlock()
 }
@@ -150,11 +165,13 @@ func (ra *RASharedDB) PostProtocol(addedChar string) {
 	if addedChar != "" {
 		//After a write, we send a reply to everyone so they can update their own file
 		ra.ms.SendAll(reply)
+		fmt.Printf("Sending update to all after write CS")
 	} else {
 		//After a read, we send Replies only to deferred peers
 		for i, val := range ra.deferredReplies {
 			if val {
 				ra.ms.Send(i, reply)
+				fmt.Printf("Sending deferred reply to %d", i)
 			}
 		}
 	}
@@ -181,6 +198,13 @@ func (ra *RASharedDB) messageReceiver() {
 			canGivePermission = canGivePermission || (ra.opType == Read && req.OpType == Read)
 			//Or if the sender's sendClock is lower than ours AND we're not already in CS
 			canGivePermission = canGivePermission || (req.Clock < ra.SendClock && ra.state != In)
+
+			//Edge case: if both trying to access critical section with same send clock,
+			//the one with lower PID proceeds
+			//TODO: caso especial si los relojes son iguales tenemos que mirar pid
+			if ra.state != Out && req.Clock == ra.SendClock {
+				canGivePermission = ra.ms.Me < req.Pid
+			}
 			ra.mutex.Unlock()
 
 			//if it's a request, evaluate here if we can give ok or defer
@@ -188,11 +212,22 @@ func (ra *RASharedDB) messageReceiver() {
 			if canGivePermission {
 				//This is not after a write, so we pass "" as second
 				ra.sendPermission(req.Pid, "")
+				fmt.Printf("Got CS request from %d, giving permission\n", req.Pid)
 			} else {
+				ra.mutex.Lock()
 				ra.deferredReplies[req.Pid] = true
+				ra.mutex.Unlock()
+				fmt.Printf("Got CS request from %d, deferring\n", req.Pid)
+			}
+		} else if rep, ok := msg.(Reply); ok {
+			ra.mutex.Lock()
+			if ra.state == Out {
+				ra.FileMutex.Lock()
+				ra.File = ra.File + rep.AddedChar
+				ra.FileMutex.Unlock()
 			}
 			ra.mutex.Unlock()
-		} else if rep, ok := msg.(Reply); ok {
+
 			ra.repliesChannel <- rep
 		} else {
 			fmt.Println("Unknown Message type")
@@ -208,4 +243,26 @@ func (ra *RASharedDB) sendPermission(pid int, addedChar string) {
 		AddedChar: addedChar,
 	}
 	ra.ms.Send(pid, reply)
+}
+
+// Convert Request to []byte using Gob
+func (r Request) ToBytes() []byte {
+	var buf bytes.Buffer
+	enc := gob.NewEncoder(&buf)
+	err := enc.Encode(r)
+	if err != nil {
+		log.Fatalf("Failed to encode Request: %v", err)
+	}
+	return buf.Bytes()
+}
+
+// Convert Reply to []byte using Gob
+func (r Reply) ToBytes() []byte {
+	var buf bytes.Buffer
+	enc := gob.NewEncoder(&buf)
+	err := enc.Encode(r)
+	if err != nil {
+		log.Fatalf("Failed to encode Reply: %v", err)
+	}
+	return buf.Bytes()
 }
