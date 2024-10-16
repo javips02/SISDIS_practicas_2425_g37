@@ -64,10 +64,8 @@ func writeOperation(ra *ram.RASharedDB) {
 func readOperation(ra *ram.RASharedDB) {
 	fmt.Printf("Asking for read consensus\n")
 	ra.PreProtocol(ram.Read)
-	ra.FileMutex.Lock()
 	fmt.Printf("File is: %s\n", ra.File)
 	time.Sleep(2 * time.Second)
-	ra.FileMutex.Unlock()
 	ra.PostProtocol("")
 	fmt.Printf("**PostProtocol completed**\n")
 }

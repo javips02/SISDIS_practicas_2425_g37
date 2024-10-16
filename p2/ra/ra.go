@@ -52,7 +52,6 @@ type RASharedDB struct {
 	SendClock       int
 	ReceiveClock    int
 	receivedReplies int
-	ReqCS           bool
 	deferredReplies []bool
 	ms              *ms.MessageSystem
 	done            chan bool
@@ -68,10 +67,9 @@ func New(me int, usersFile string) *RASharedDB {
 	messageTypes := []ms.Message{Request{}, Reply{}}
 	msgs := ms.New(me, usersFile, messageTypes)
 	ra := RASharedDB{
-		SendClock:       0,     // Inicializa reloj vectorial
-		ReceiveClock:    0,     // Inicializa reloj de recepción
-		receivedReplies: 0,     // Inicializa receivedReplies
-		ReqCS:           false, // Inicializa ReqCS
+		SendClock:       0, // Inicializa reloj vectorial
+		ReceiveClock:    0, // Inicializa reloj de recepción
+		receivedReplies: 0, // Inicializa receivedReplies
 		ms:              &msgs,
 		deferredReplies: make([]bool, len(msgs.Peers)), // Inicializa con 'false' para todos los procesos
 		done:            make(chan bool),
@@ -101,9 +99,8 @@ func (ra *RASharedDB) PreProtocol(opType OpType) {
 		Clock: ra.SendClock,
 		Pid:   ra.ms.Me,
 	}
-	ra.ReqCS = true
-	ra.receivedReplies = 0 // Reiniciar el contador de respuestas pendientes
 
+	ra.receivedReplies = 0
 	ra.mutex.Unlock()
 
 	// Enviar mensaje de petición a todos los procesos y esperar respuestas
@@ -116,10 +113,6 @@ func (ra *RASharedDB) PreProtocol(opType OpType) {
 // Envía mensaje de solicitud de entrada a la SC a todos los nodos y espera
 // respuesta de todos ellos antes de entrar
 func (ra *RASharedDB) askForPermission(request Request) {
-	//Set it to 0 because while we were out of CS maybe someone sent us an after write update
-	ra.mutex.Lock()
-	ra.receivedReplies = 0
-	ra.mutex.Unlock()
 
 	ra.ms.SendAll(request)
 
@@ -127,18 +120,18 @@ func (ra *RASharedDB) askForPermission(request Request) {
 	for {
 
 		// Esperamos en el canal hasta que llegue una respuesta
-		<-ra.repliesChannel
-
+		reply := <-ra.repliesChannel
+		fmt.Printf("Got a reply from replyChan\n")
 		ra.mutex.Lock()
-
+		fmt.Printf("Locked mutex\n")
 		ra.receivedReplies++
 
 		if ra.receivedReplies == len(ra.ms.Peers)-1 { //aprovechamos el vector de peers que nos dice cuántos compañeros hay en el sisdis
 			// Si hemos recibido respuestas de todos (menos nosotros mismos), salimos del bucle
-			fmt.Printf("Got all replies, entering CS\n")
+			fmt.Printf("GOT ALL REPLIES, entering CS\n")
 			break
 		} else {
-			fmt.Printf("Got reply %d of %d\n", ra.receivedReplies, len(ra.ms.Peers)-1)
+			fmt.Printf("Got reply %d of %d by peer %d\n", ra.receivedReplies, len(ra.ms.Peers)-1, reply.Pid)
 		}
 		ra.mutex.Unlock()
 
@@ -189,9 +182,11 @@ func (ra *RASharedDB) Stop() {
 func (ra *RASharedDB) messageReceiver() {
 	for {
 		msg := ra.ms.Receive()
+		fmt.Printf("Got msg from messagebox, parsing it\n")
 		if req, ok := msg.(Request); ok {
 
 			ra.mutex.Lock()
+			ra.ReceiveClock = max(ra.ReceiveClock, req.Clock)
 			//If we're out of CS and not trying
 			canGivePermission := ra.state == Out
 			//Or if we both want to read
@@ -220,15 +215,20 @@ func (ra *RASharedDB) messageReceiver() {
 				fmt.Printf("Got CS request from %d, deferring\n", req.Pid)
 			}
 		} else if rep, ok := msg.(Reply); ok {
-			ra.mutex.Lock()
-			if ra.state == Out {
-				ra.FileMutex.Lock()
+
+			if rep.AddedChar != "" {
+				fmt.Printf("Got non empty reply, updating file\n")
 				ra.File = ra.File + rep.AddedChar
-				ra.FileMutex.Unlock()
+			}
+
+			//If we were not even trying to enter, then it's an after write update
+			//and we don't need to put
+			ra.mutex.Lock()
+			if ra.state != Out {
+				ra.repliesChannel <- rep
 			}
 			ra.mutex.Unlock()
 
-			ra.repliesChannel <- rep
 		} else {
 			fmt.Println("Unknown Message type")
 		}
