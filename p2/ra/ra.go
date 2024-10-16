@@ -51,7 +51,6 @@ const (
 type RASharedDB struct {
 	SendClock       int
 	ReceiveClock    int
-	receivedReplies int
 	deferredReplies []bool
 	ms              *ms.MessageSystem
 	done            chan bool
@@ -69,14 +68,13 @@ func New(me int, usersFile string) *RASharedDB {
 	ra := RASharedDB{
 		SendClock:       0, // Inicializa reloj vectorial
 		ReceiveClock:    0, // Inicializa reloj de recepción
-		receivedReplies: 0, // Inicializa receivedReplies
 		ms:              &msgs,
 		deferredReplies: make([]bool, len(msgs.Peers)), // Inicializa con 'false' para todos los procesos
 		done:            make(chan bool),
 		state:           Out,            // Estado inicial
 		File:            "myFileBlaBla", // Inicializa File como string vacío
 		FileMutex:       sync.Mutex{},   // Mutex no necesita ser referenciado
-		repliesChannel:  make(chan Reply),
+		repliesChannel:  make(chan Reply, 2*len(msgs.Peers)),
 	}
 	go ra.messageReceiver()
 	return &ra
@@ -100,7 +98,6 @@ func (ra *RASharedDB) PreProtocol(opType OpType) {
 		Pid:   ra.ms.Me,
 	}
 
-	ra.receivedReplies = 0
 	ra.mutex.Unlock()
 
 	// Enviar mensaje de petición a todos los procesos y esperar respuestas
@@ -115,28 +112,26 @@ func (ra *RASharedDB) PreProtocol(opType OpType) {
 func (ra *RASharedDB) askForPermission(request Request) {
 
 	ra.ms.SendAll(request)
-
+	receivedReplies := 0
 	// Esperar respuestas de todos los procesos
 	for {
 
 		// Esperamos en el canal hasta que llegue una respuesta
 		reply := <-ra.repliesChannel
 		fmt.Printf("Got a reply from replyChan\n")
-		ra.mutex.Lock()
 		fmt.Printf("Locked mutex\n")
-		ra.receivedReplies++
+		receivedReplies++
 
-		if ra.receivedReplies == len(ra.ms.Peers)-1 { //aprovechamos el vector de peers que nos dice cuántos compañeros hay en el sisdis
+		if receivedReplies == len(ra.ms.Peers)-1 { //aprovechamos el vector de peers que nos dice cuántos compañeros hay en el sisdis
 			// Si hemos recibido respuestas de todos (menos nosotros mismos), salimos del bucle
 			fmt.Printf("GOT ALL REPLIES, entering CS\n")
 			break
 		} else {
-			fmt.Printf("Got reply %d of %d by peer %d\n", ra.receivedReplies, len(ra.ms.Peers)-1, reply.Pid)
+			fmt.Printf("Got reply %d of %d by peer %d\n", receivedReplies, len(ra.ms.Peers)-1, reply.Pid)
 		}
-		ra.mutex.Unlock()
 
 	}
-
+	ra.mutex.Lock()
 	ra.state = In
 	ra.mutex.Unlock()
 }
@@ -209,9 +204,9 @@ func (ra *RASharedDB) messageReceiver() {
 				ra.sendPermission(req.Pid, "")
 				fmt.Printf("Got CS request from %d, giving permission\n", req.Pid)
 			} else {
-				ra.mutex.Lock()
+
 				ra.deferredReplies[req.Pid] = true
-				ra.mutex.Unlock()
+
 				fmt.Printf("Got CS request from %d, deferring\n", req.Pid)
 			}
 		} else if rep, ok := msg.(Reply); ok {
