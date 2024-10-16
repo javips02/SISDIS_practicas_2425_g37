@@ -177,7 +177,6 @@ func (ra *RASharedDB) Stop() {
 func (ra *RASharedDB) messageReceiver() {
 	for {
 		msg := ra.ms.Receive()
-		fmt.Printf("Got msg from messagebox, parsing it\n")
 		if req, ok := msg.(Request); ok {
 
 			ra.mutex.Lock()
@@ -224,8 +223,6 @@ func (ra *RASharedDB) messageReceiver() {
 			}
 			ra.mutex.Unlock()
 
-		} else {
-			fmt.Println("Unknown Message type")
 		}
 	}
 }
