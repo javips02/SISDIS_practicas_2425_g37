@@ -118,7 +118,7 @@ func (ra *RASharedDB) PreProtocol(opType OpType) {
 func (ra *RASharedDB) askForPermission(request Request) {
 
 	ra.ms.SendAll(request)
-	time.Sleep(2 * time.Second)
+	//time.Sleep(2 * time.Second)
 	receivedReplies := 0
 	// Esperar respuestas de todos los procesos
 	for {
@@ -186,7 +186,8 @@ func (ra *RASharedDB) messageReceiver() {
 		msg := ra.ms.Receive()
 
 		if req, ok := msg.(Request); ok {
-
+			//In this case we also update our internal clock
+			ra.vectorialClock[ra.ms.Me] = req.VectorialClock[req.Pid]
 			ra.updateVectorialClock(req.VectorialClock)
 			ra.mutex.Lock()
 			ourClock := ra.vectorialClock[ra.ms.Me]
@@ -209,18 +210,16 @@ func (ra *RASharedDB) messageReceiver() {
 
 			canGivePermission := canGivePermission1 || canGivePermission2 || canGivePermission3
 
-			if !canGivePermission && ourClock == theirClock && ra.state != In {
-				canGivePermission = ra.ms.Me > req.Pid
-				if canGivePermission {
-					fmt.Printf("special case \n")
-				}
-			}
 			ra.mutex.Unlock()
 
 			//if it's a request, evaluate here if we can give ok or defer
 			//If we're out of critical section, we have lower clock or matrix allows it
 			if canGivePermission {
 				//This is not after a write, so we pass "" as second
+				if ra.ms.Me == 2 {
+					fmt.Printf("Sleeping 5 secs\n")
+					time.Sleep(5 * time.Second)
+				}
 				ra.sendPermission(req.Pid, "")
 				fmt.Printf("Got CS request from %d, giving permission\n", req.Pid)
 			} else {
@@ -230,7 +229,10 @@ func (ra *RASharedDB) messageReceiver() {
 				fmt.Printf("Got CS request from %d, deferring\n", req.Pid)
 			}
 		} else if rep, ok := msg.(Reply); ok {
+			//We update our vectorial clock but don't update *our* clock
+			//because it's a received reply event
 
+			ra.updateVectorialClock(rep.VectorialClock)
 			if rep.AddedChar != "" {
 				fmt.Printf("Got non empty reply, updating file\n")
 				ra.File = ra.File + rep.AddedChar
@@ -253,10 +255,13 @@ func (ra *RASharedDB) messageReceiver() {
 // Sends a Reply to node number pid, added char should be not null only
 // after exiting a WRITE CRITICAL SECTION, empty string ("") otherwise
 func (ra *RASharedDB) sendPermission(pid int, addedChar string) {
+	ra.mutex.Lock()
 	reply := Reply{
-		Pid:       ra.ms.Me,
-		AddedChar: addedChar,
+		Pid:            ra.ms.Me,
+		AddedChar:      addedChar,
+		VectorialClock: ra.vectorialClock,
 	}
+	ra.mutex.Unlock()
 	ra.ms.Send(pid, reply)
 }
 

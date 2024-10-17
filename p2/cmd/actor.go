@@ -55,7 +55,7 @@ func writeOperation(ra *ram.RASharedDB) {
 	fmt.Printf("Asking for write consensus")
 	ra.PreProtocol(ram.Write)
 	fmt.Printf("Got consensus. Adding %s to %s\n", randomChar, ra.File)
-	time.Sleep(4 * time.Second)
+	//time.Sleep(2 * time.Second)
 	ra.File += randomChar
 	ra.PostProtocol(randomChar)
 	fmt.Printf("**PostProtocol completed**\n")

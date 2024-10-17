@@ -40,3 +40,6 @@ go.sum
 # Opcional: ignorar archivos temporales o de respaldo
 *~
 *.bak
+
+/p2/cmd/logs
+*/piCompile.sh
