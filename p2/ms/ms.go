@@ -10,6 +10,7 @@ package ms
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/gob"
 	"fmt"
 	"net"
@@ -62,7 +63,7 @@ func (ms *MessageSystem) Send(pid int, msg Message) {
 	conn, err := net.Dial("tcp", ms.Peers[pid])
 	checkError(err)
 
-	vectorClockMessage := ms.logger.PrepareSend("Sending Message", msg, govec.GetDefaultLogOptions())
+	vectorClockMessage := ms.logger.PrepareSend("Sending Message", msg.ToBytes(), govec.GetDefaultLogOptions())
 
 	// Send message
 	_, err = conn.Write(vectorClockMessage)
@@ -137,24 +138,23 @@ func New(whoIam int, usersFile string, messageTypes []Message) (ms MessageSystem
 				conn, err := listener.Accept()
 				checkError(err)
 				var buf = make([]byte, 1024)
-				var msg Message
+				var encodedMessage = make([]byte, 1024)
 
 				_, err = conn.Read(buf)
 				com.CheckError(err)
 
-				var receivedMsg Message
-				logger.UnpackReceive("Received message", buf[:1023], &receivedMsg, govec.GetDefaultLogOptions())
+				var decryptedMessage Message
+				logger.UnpackReceive("Received message", buf, &encodedMessage, govec.GetDefaultLogOptions())
 
-				fmt.Printf("Received Request: %+v\n", receivedMsg)
+				decryptedMessage = FromBytes(encodedMessage)
 
 				// Log a local event
-				logger.LogLocalEvent("Example Complete", govec.GetDefaultLogOptions())
 				/*decoder := gob.NewDecoder(conn)
 
 				err = decoder.Decode(&msg)
 				com.CheckError(err)*/
 				conn.Close()
-				ms.mbox <- msg
+				ms.mbox <- decryptedMessage
 			}
 		}
 	}()
@@ -170,4 +170,34 @@ func (ms *MessageSystem) Stop() {
 // Returns our own endpoint
 func (ms *MessageSystem) GetCurrentEndpoint() string {
 	return ms.Peers[ms.Me]
+}
+
+func (ms *MessageSystem) LogLogicalEvent(event string) {
+	ms.logger.LogLocalEvent(event, govec.GetDefaultLogOptions())
+}
+
+func FromBytes(data []byte) Message {
+	// Read the first byte to identify the message type
+	typeMarker := data[0]
+	buf := bytes.NewBuffer(data[1:]) // Remove the type marker byte
+	dec := gob.NewDecoder(buf)
+
+	switch typeMarker {
+	case 0x01: // It's a Request
+		var req com.Request
+		err := dec.Decode(&req)
+		if err != nil {
+			panic(err)
+		}
+		return &req
+	case 0x02: // It's a Reply
+		var rep com.Reply
+		err := dec.Decode(&rep)
+		if err != nil {
+			panic(err)
+		}
+		return &rep
+	default:
+		panic("Unknown message type")
+	}
 }
