@@ -77,9 +77,9 @@ func (ra *RASharedDB) PreProtocol(opType com.OpType) {
 
 	// Al llegar aquí, se tiene acceso a la sección crítica
 	if opType == com.Write {
-		ra.ms.LogLogicalEvent("Entering read CS")
+		ra.ms.LogLogicalEvent("Read " + ra.File)
 	} else {
-		ra.ms.LogLogicalEvent("Entering write CS")
+		ra.ms.LogLogicalEvent("Appending char to " + ra.File)
 	}
 }
 

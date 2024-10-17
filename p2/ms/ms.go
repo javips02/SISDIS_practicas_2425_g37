@@ -62,8 +62,17 @@ func parsePeers(path string) (lines []string) {
 func (ms *MessageSystem) Send(pid int, msg Message) {
 	conn, err := net.Dial("tcp", ms.Peers[pid])
 	checkError(err)
-
-	vectorClockMessage := ms.logger.PrepareSend("Sending Message", msg.ToBytes(), govec.GetDefaultLogOptions())
+	var logMsg string
+	if _, ok := msg.(*com.Request); ok {
+		logMsg = "Requesting CS entrance"
+	} else if rep, ok := msg.(*com.Reply); ok {
+		if rep.AddedChar == "" {
+			logMsg = "Allowing CS"
+		} else {
+			logMsg = "Updating file after write with " + rep.AddedChar
+		}
+	}
+	vectorClockMessage := ms.logger.PrepareSend(logMsg, msg.ToBytes(), govec.GetDefaultLogOptions())
 
 	// Send message
 	_, err = conn.Write(vectorClockMessage)
