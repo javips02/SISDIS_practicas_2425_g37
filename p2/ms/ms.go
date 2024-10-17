@@ -17,7 +17,8 @@ import (
 	"practica2/com"
 )
 
-type Message interface{}
+type Message interface {
+}
 
 type MessageSystem struct {
 	mbox  chan Message
