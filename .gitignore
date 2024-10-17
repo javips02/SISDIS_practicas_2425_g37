@@ -41,5 +41,5 @@ go.sum
 *~
 *.bak
 
-/p2/cmd/logs
-*/piCompile.sh
+/p2/cmd/logs/*
+piCompile.sh
