@@ -2,3 +2,7 @@ actor1 {"actor1":1}
 Initialization Complete
 actor1 {"actor1":2}
 INFO Sending Message
+actor1 {"actor0":4, "actor1":3}
+INFO Received message
+actor1 {"actor0":4, "actor1":4}
+INFO Example Complete
