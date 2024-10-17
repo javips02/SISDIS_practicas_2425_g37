@@ -15,15 +15,16 @@ import (
 	"log"
 	"practica2/ms"
 	"sync"
+	"time"
 )
 
 type Request struct {
-	//Sender's clock
-	Clock int
 	//Sender's PID
 	Pid int
 	//If it's a read or a write
 	OpType OpType
+	//Vectorial clock
+	VectorialClock []int
 }
 
 type Reply struct {
@@ -31,6 +32,8 @@ type Reply struct {
 	Pid int
 	//The char we added to the file. If null, it was a read
 	AddedChar string
+	//Vectorial clock
+	VectorialClock []int
 }
 
 type State string
@@ -49,9 +52,8 @@ const (
 )
 
 type RASharedDB struct {
-	SendClock       int
-	ReceiveClock    int
 	deferredReplies []bool
+	vectorialClock  []int
 	ms              *ms.MessageSystem
 	done            chan bool
 	state           State
@@ -66,8 +68,7 @@ func New(me int, usersFile string) *RASharedDB {
 	messageTypes := []ms.Message{Request{}, Reply{}}
 	msgs := ms.New(me, usersFile, messageTypes)
 	ra := RASharedDB{
-		SendClock:       0, // Inicializa reloj vectorial
-		ReceiveClock:    0, // Inicializa reloj de recepción
+		vectorialClock:  make([]int, len(msgs.Peers)),
 		ms:              &msgs,
 		deferredReplies: make([]bool, len(msgs.Peers)), // Inicializa con 'false' para todos los procesos
 		done:            make(chan bool),
@@ -75,6 +76,10 @@ func New(me int, usersFile string) *RASharedDB {
 		File:            "myFileBlaBla", // Inicializa File como string vacío
 		FileMutex:       sync.Mutex{},   // Mutex no necesita ser referenciado
 		repliesChannel:  make(chan Reply, 2*len(msgs.Peers)),
+	}
+	for i := 0; i < len(msgs.Peers); i++ {
+		ra.vectorialClock[i] = 0
+		ra.deferredReplies[i] = false
 	}
 	go ra.messageReceiver()
 	return &ra
@@ -90,12 +95,13 @@ func (ra *RASharedDB) PreProtocol(opType OpType) {
 	ra.state = Trying
 	ra.opType = opType
 	// Incrementar el reloj lógico
-	ra.SendClock = ra.ReceiveClock + 1
+	ra.vectorialClock[ra.ms.Me]++
 
 	// Crear el mensaje de petición
 	request := Request{
-		Clock: ra.SendClock,
-		Pid:   ra.ms.Me,
+		VectorialClock: ra.vectorialClock,
+		Pid:            ra.ms.Me,
+		OpType:         opType,
 	}
 
 	ra.mutex.Unlock()
@@ -112,14 +118,13 @@ func (ra *RASharedDB) PreProtocol(opType OpType) {
 func (ra *RASharedDB) askForPermission(request Request) {
 
 	ra.ms.SendAll(request)
+	//time.Sleep(2 * time.Second)
 	receivedReplies := 0
 	// Esperar respuestas de todos los procesos
 	for {
 
 		// Esperamos en el canal hasta que llegue una respuesta
 		reply := <-ra.repliesChannel
-		fmt.Printf("Got a reply from replyChan\n")
-		fmt.Printf("Locked mutex\n")
 		receivedReplies++
 
 		if receivedReplies == len(ra.ms.Peers)-1 { //aprovechamos el vector de peers que nos dice cuántos compañeros hay en el sisdis
@@ -145,8 +150,9 @@ func (ra *RASharedDB) PostProtocol(addedChar string) {
 
 	ra.state = Out
 	reply := Reply{
-		Pid:       ra.ms.Me,
-		AddedChar: addedChar,
+		Pid:            ra.ms.Me,
+		AddedChar:      addedChar,
+		VectorialClock: ra.vectorialClock,
 	}
 
 	ra.mutex.Unlock()
@@ -167,6 +173,7 @@ func (ra *RASharedDB) PostProtocol(addedChar string) {
 	for i := range ra.deferredReplies {
 		ra.deferredReplies[i] = false
 	}
+	log.Println(ra.vectorialClock)
 }
 
 func (ra *RASharedDB) Stop() {
@@ -178,28 +185,40 @@ func (ra *RASharedDB) messageReceiver() {
 	for {
 		msg := ra.ms.Receive()
 		if req, ok := msg.(Request); ok {
-
+			//In this case we also update our internal clock
+			ra.vectorialClock[ra.ms.Me] = req.VectorialClock[req.Pid]
+			ra.updateVectorialClock(req.VectorialClock)
 			ra.mutex.Lock()
-			ra.ReceiveClock = max(ra.ReceiveClock, req.Clock)
+			ourClock := ra.vectorialClock[ra.ms.Me]
+			theirClock := req.VectorialClock[req.Pid]
 			//If we're out of CS and not trying
-			canGivePermission := ra.state == Out
-			//Or if we both want to read
-			canGivePermission = canGivePermission || (ra.opType == Read && req.OpType == Read)
-			//Or if the sender's sendClock is lower than ours AND we're not already in CS
-			canGivePermission = canGivePermission || (req.Clock < ra.SendClock && ra.state != In)
-
-			//Edge case: if both trying to access critical section with same send clock,
-			//the one with lower PID proceeds
-			//TODO: caso especial si los relojes son iguales tenemos que mirar pid
-			if ra.state != Out && req.Clock == ra.SendClock {
-				canGivePermission = ra.ms.Me < req.Pid
+			canGivePermission1 := ra.state == Out
+			if canGivePermission1 {
+				fmt.Printf("Condition 1 met\n")
 			}
+			//Or if we both want to read
+			canGivePermission2 := (ra.opType == Read && req.OpType == Read)
+			if canGivePermission2 {
+				fmt.Printf("Condition 2 met\n")
+			}
+			//Or if the sender's sendClock is lower than ours AND we're not already in CS
+			canGivePermission3 := (ourClock > theirClock && ra.state != In)
+			if canGivePermission3 {
+				fmt.Printf("Condition 3 met\n")
+			}
+
+			canGivePermission := canGivePermission1 || canGivePermission2 || canGivePermission3
+
 			ra.mutex.Unlock()
 
 			//if it's a request, evaluate here if we can give ok or defer
 			//If we're out of critical section, we have lower clock or matrix allows it
 			if canGivePermission {
 				//This is not after a write, so we pass "" as second
+				if ra.ms.Me == 2 {
+					fmt.Printf("Sleeping 5 secs\n")
+					time.Sleep(5 * time.Second)
+				}
 				ra.sendPermission(req.Pid, "")
 				fmt.Printf("Got CS request from %d, giving permission\n", req.Pid)
 			} else {
@@ -209,7 +228,10 @@ func (ra *RASharedDB) messageReceiver() {
 				fmt.Printf("Got CS request from %d, deferring\n", req.Pid)
 			}
 		} else if rep, ok := msg.(Reply); ok {
+			//We update our vectorial clock but don't update *our* clock
+			//because it's a received reply event
 
+			ra.updateVectorialClock(rep.VectorialClock)
 			if rep.AddedChar != "" {
 				fmt.Printf("Got non empty reply, updating file\n")
 				ra.File = ra.File + rep.AddedChar
@@ -230,11 +252,26 @@ func (ra *RASharedDB) messageReceiver() {
 // Sends a Reply to node number pid, added char should be not null only
 // after exiting a WRITE CRITICAL SECTION, empty string ("") otherwise
 func (ra *RASharedDB) sendPermission(pid int, addedChar string) {
+	ra.mutex.Lock()
 	reply := Reply{
-		Pid:       ra.ms.Me,
-		AddedChar: addedChar,
+		Pid:            ra.ms.Me,
+		AddedChar:      addedChar,
+		VectorialClock: ra.vectorialClock,
 	}
+	ra.mutex.Unlock()
 	ra.ms.Send(pid, reply)
+}
+
+// Updates our vectorial clock by using one received in a message.
+func (ra *RASharedDB) updateVectorialClock(receivedClock []int) {
+	ra.mutex.Lock()
+	for i := 0; i < len(ra.vectorialClock); i++ {
+		if receivedClock[i] > ra.vectorialClock[i] {
+			ra.vectorialClock[i] = receivedClock[i]
+		}
+	}
+	ra.mutex.Unlock()
+
 }
 
 // Convert Request to []byte using Gob
