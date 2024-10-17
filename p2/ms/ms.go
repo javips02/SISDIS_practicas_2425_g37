@@ -117,7 +117,7 @@ func New(whoIam int, usersFile string, messageTypes []Message) (ms MessageSystem
 	Register(messageTypes)
 
 	//GoVector initialization
-	logFilePath := fmt.Sprintf("./logs/actor%d.log", ms.Me)
+	logFilePath := fmt.Sprintf("./logs/actor%d", ms.Me)
 	actorName := fmt.Sprintf("actor%d", ms.Me)
 
 	logger := govec.InitGoVector(actorName, logFilePath, govec.GetDefaultConfig())
