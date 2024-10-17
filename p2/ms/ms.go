@@ -15,9 +15,12 @@ import (
 	"net"
 	"os"
 	"practica2/com"
+
+	"github.com/DistributedClocks/GoVector/govec"
 )
 
 type Message interface {
+	ToBytes() []byte
 }
 
 type MessageSystem struct {
@@ -25,6 +28,9 @@ type MessageSystem struct {
 	Peers []string
 	done  chan bool
 	Me    int
+
+	logger  *govec.GoLog
+	logOpts govec.GoLogOptions
 }
 
 const (
@@ -55,8 +61,15 @@ func parsePeers(path string) (lines []string) {
 func (ms *MessageSystem) Send(pid int, msg Message) {
 	conn, err := net.Dial("tcp", ms.Peers[pid])
 	checkError(err)
-	encoder := gob.NewEncoder(conn)
-	err = encoder.Encode(&msg)
+
+	vectorClockMessage := ms.logger.PrepareSend("Sending Message", msg, govec.GetDefaultLogOptions())
+
+	// Send message
+	_, err = conn.Write(vectorClockMessage)
+
+	//encoder := gob.NewEncoder(conn)
+	//err = encoder.Encode(&msg)
+
 	com.CheckError(err)
 	conn.Close()
 }
@@ -101,6 +114,16 @@ func New(whoIam int, usersFile string, messageTypes []Message) (ms MessageSystem
 	ms.mbox = make(chan Message, MAXMESSAGES)
 	ms.done = make(chan bool)
 	Register(messageTypes)
+
+	//GoVector initialization
+	logFilePath := fmt.Sprintf("./logs/actor%d.log", ms.Me)
+	actorName := fmt.Sprintf("actor%d", ms.Me)
+
+	logger := govec.InitGoVector(actorName, logFilePath, govec.GetDefaultConfig())
+	opts := govec.GetDefaultLogOptions()
+	ms.logger = logger
+	ms.logOpts = opts
+
 	go func() {
 		listener, err := net.Listen("tcp", ms.Peers[ms.Me])
 		checkError(err)
@@ -113,10 +136,23 @@ func New(whoIam int, usersFile string, messageTypes []Message) (ms MessageSystem
 			default:
 				conn, err := listener.Accept()
 				checkError(err)
-				decoder := gob.NewDecoder(conn)
+				var buf = make([]byte, 1024)
 				var msg Message
-				err = decoder.Decode(&msg)
+
+				_, err = conn.Read(buf)
 				com.CheckError(err)
+
+				var receivedMsg Message
+				logger.UnpackReceive("Received message", buf[:1023], &receivedMsg, govec.GetDefaultLogOptions())
+
+				fmt.Printf("Received Request: %+v\n", receivedMsg)
+
+				// Log a local event
+				logger.LogLocalEvent("Example Complete", govec.GetDefaultLogOptions())
+				/*decoder := gob.NewDecoder(conn)
+
+				err = decoder.Decode(&msg)
+				com.CheckError(err)*/
 				conn.Close()
 				ms.mbox <- msg
 			}

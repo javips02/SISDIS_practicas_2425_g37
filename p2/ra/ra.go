@@ -184,7 +184,6 @@ func (ra *RASharedDB) Stop() {
 func (ra *RASharedDB) messageReceiver() {
 	for {
 		msg := ra.ms.Receive()
-
 		if req, ok := msg.(Request); ok {
 			//In this case we also update our internal clock
 			ra.vectorialClock[ra.ms.Me] = req.VectorialClock[req.Pid]
@@ -246,8 +245,6 @@ func (ra *RASharedDB) messageReceiver() {
 			}
 			ra.mutex.Unlock()
 
-		} else {
-			fmt.Println("Unknown Message type")
 		}
 	}
 }
