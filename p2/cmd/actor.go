@@ -53,9 +53,9 @@ func taskCreator(ra *ram.RASharedDB) {
 func writeOperation(ra *ram.RASharedDB) {
 	randomChar := randomChar()
 	fmt.Printf("Asking for write consensus")
-	ra.PreProtocol(ram.Write)
+	ra.PreProtocol(com.Write)
 	fmt.Printf("Got consensus. Adding %s to %s\n", randomChar, ra.File)
-	//time.Sleep(2 * time.Second)
+	time.Sleep(2 * time.Second)
 	ra.File += randomChar
 	ra.PostProtocol(randomChar)
 	fmt.Printf("**PostProtocol completed**\n")
@@ -63,9 +63,9 @@ func writeOperation(ra *ram.RASharedDB) {
 
 func readOperation(ra *ram.RASharedDB) {
 	fmt.Printf("Asking for read consensus\n")
-	ra.PreProtocol(ram.Read)
+	ra.PreProtocol(com.Read)
 	fmt.Printf("File is: %s\n", ra.File)
-	time.Sleep(6 * time.Second)
+	time.Sleep(2 * time.Second)
 	ra.PostProtocol("")
 	fmt.Printf("**PostProtocol completed**\n")
 }
