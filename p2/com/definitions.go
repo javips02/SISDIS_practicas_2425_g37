@@ -20,16 +20,16 @@ type Request struct {
 	//Sender's PID
 	Pid int
 	//If it's a read or a write
-	OpType         OpType
 	VectorialClock []int
+	OpType         OpType
 }
 
 type Reply struct {
 	//Replier's PID
 	Pid int
 	//The char we added to the file. If null, it was a read
-	AddedChar      string
 	VectorialClock []int
+	AddedChar      string
 }
 
 type State string
