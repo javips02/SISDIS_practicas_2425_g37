@@ -79,7 +79,19 @@ type NodoRaft struct {
 	Logger *log.Logger
 
 	// Vuestros datos aqui.
+	// VALORES PERSISTENTES EN TODOS LOS SERVIDORES //
+	//mandatoActual int //para la pr4. Indica el mandato más reciente que esta réplica conoce
+	votedFor   int      //candidato que ha recibido el voto en el mandato actual
+	logEntries []string //guarda en cada entrada un comando para el estado de la máquina
 
+	// VALORES VOLÁTILES DE ESTADO EN TODOS LOS SERVIDORES //
+	commitIndex int // valor más alto de entrada comprometida por esta réplica (0...)
+	lastApplied int // índice de la entrada más alta aplicada a nuestra máquina de estados (0 ...)
+
+	// VALORES VOLÁTILES EN RÉPLICAS LÍDER //
+	// (reinicializar estos valores después de cada elección)
+	nextIndex  []int //en cada posición, el índice de la siguiente entrada a mandar al servidor (leader_lastLog+1...)
+	matchIndex []int //índice de la entrada más alta que cada server sabe que está replicada en sí mismo (0...)
 	// mirar figura 2 para descripción del estado que debe mantenre un nodo Raft
 }
 
