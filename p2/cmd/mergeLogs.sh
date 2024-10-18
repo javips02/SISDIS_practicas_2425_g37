@@ -1,0 +1,1 @@
+GoVector --log_type shiviz --log_dir ./logs --outfile hello.log

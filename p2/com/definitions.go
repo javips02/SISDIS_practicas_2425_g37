@@ -13,24 +13,23 @@ import (
 	"bytes"
 	"encoding/gob"
 	"fmt"
-	"log"
 	"os"
 )
 
 type Request struct {
-	//Sender's clock
-	Clock int
 	//Sender's PID
 	Pid int
 	//If it's a read or a write
-	OpType OpType
+	VectorialClock []int
+	OpType         OpType
 }
 
 type Reply struct {
 	//Replier's PID
 	Pid int
 	//The char we added to the file. If null, it was a read
-	AddedChar string
+	VectorialClock []int
+	AddedChar      string
 }
 
 type State string
@@ -55,24 +54,26 @@ func CheckError(err error) {
 	}
 }
 
-// Convert Request to []byte using Gob
-func (r Request) ToBytes() []byte {
+// ToBytes for Request with type marker
+func (r *Request) ToBytes() []byte {
 	var buf bytes.Buffer
 	enc := gob.NewEncoder(&buf)
 	err := enc.Encode(r)
 	if err != nil {
-		log.Fatalf("Failed to encode Request: %v", err)
+		panic(err)
 	}
-	return buf.Bytes()
+	// Prepend type marker (0x01 for Request)
+	return append([]byte{0x01}, buf.Bytes()...)
 }
 
-// Convert Reply to []byte using Gob
-func (r Reply) ToBytes() []byte {
+// ToBytes for Reply with type marker
+func (r *Reply) ToBytes() []byte {
 	var buf bytes.Buffer
 	enc := gob.NewEncoder(&buf)
 	err := enc.Encode(r)
 	if err != nil {
-		log.Fatalf("Failed to encode Reply: %v", err)
+		panic(err)
 	}
-	return buf.Bytes()
+	// Prepend type marker (0x02 for Reply)
+	return append([]byte{0x02}, buf.Bytes()...)
 }

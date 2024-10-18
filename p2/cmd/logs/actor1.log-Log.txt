@@ -1,4 +1,0 @@
-actor1 {"actor1":1}
-Initialization Complete
-actor1 {"actor1":2}
-INFO Sending Message

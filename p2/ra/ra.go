@@ -9,46 +9,12 @@
 package ra
 
 import (
-	"bytes"
-	"encoding/gob"
 	"fmt"
 	"log"
+	"practica2/com"
 	"practica2/ms"
 	"sync"
 	"time"
-)
-
-type Request struct {
-	//Sender's PID
-	Pid int
-	//If it's a read or a write
-	OpType OpType
-	//Vectorial clock
-	VectorialClock []int
-}
-
-type Reply struct {
-	//Replier's PID
-	Pid int
-	//The char we added to the file. If null, it was a read
-	AddedChar string
-	//Vectorial clock
-	VectorialClock []int
-}
-
-type State string
-type OpType string
-
-// Define the enum values
-const (
-	Out    State = "out"
-	Trying State = "trying"
-	In     State = "in"
-)
-
-const (
-	Read  OpType = "read"
-	Write OpType = "write"
 )
 
 type RASharedDB struct {
@@ -56,26 +22,26 @@ type RASharedDB struct {
 	vectorialClock  []int
 	ms              *ms.MessageSystem
 	done            chan bool
-	state           State
-	opType          OpType
+	state           com.State
+	opType          com.OpType
 	mutex           sync.Mutex // mutex para proteger concurrencia sobre las variables
 	File            string
 	FileMutex       sync.Mutex
-	repliesChannel  chan Reply
+	repliesChannel  chan com.Reply
 }
 
 func New(me int, usersFile string) *RASharedDB {
-	messageTypes := []ms.Message{Request{}, Reply{}}
+	messageTypes := []ms.Message{&com.Request{}, &com.Reply{}}
 	msgs := ms.New(me, usersFile, messageTypes)
 	ra := RASharedDB{
 		vectorialClock:  make([]int, len(msgs.Peers)),
 		ms:              &msgs,
 		deferredReplies: make([]bool, len(msgs.Peers)), // Inicializa con 'false' para todos los procesos
 		done:            make(chan bool),
-		state:           Out,            // Estado inicial
+		state:           com.Out,        // Estado inicial
 		File:            "myFileBlaBla", // Inicializa File como string vacío
 		FileMutex:       sync.Mutex{},   // Mutex no necesita ser referenciado
-		repliesChannel:  make(chan Reply, 2*len(msgs.Peers)),
+		repliesChannel:  make(chan com.Reply, 2*len(msgs.Peers)),
 	}
 	for i := 0; i < len(msgs.Peers); i++ {
 		ra.vectorialClock[i] = 0
@@ -88,17 +54,17 @@ func New(me int, usersFile string) *RASharedDB {
 // Pre: Verdad
 // opType puede ser Read o Write
 // Post: Realiza el PreProtocol para el algoritmo de Ricart-Agrawala Generalizado
-func (ra *RASharedDB) PreProtocol(opType OpType) {
+func (ra *RASharedDB) PreProtocol(opType com.OpType) {
 
 	// (Re)set internal variables
 	ra.mutex.Lock()
-	ra.state = Trying
+	ra.state = com.Trying
 	ra.opType = opType
 	// Incrementar el reloj lógico
 	ra.vectorialClock[ra.ms.Me]++
 
 	// Crear el mensaje de petición
-	request := Request{
+	request := com.Request{
 		VectorialClock: ra.vectorialClock,
 		Pid:            ra.ms.Me,
 		OpType:         opType,
@@ -110,14 +76,18 @@ func (ra *RASharedDB) PreProtocol(opType OpType) {
 	ra.askForPermission(request)
 
 	// Al llegar aquí, se tiene acceso a la sección crítica
-
+	if opType == com.Write {
+		ra.ms.LogLogicalEvent("Read " + ra.File)
+	} else {
+		ra.ms.LogLogicalEvent("Appending char to " + ra.File)
+	}
 }
 
 // Envía mensaje de solicitud de entrada a la SC a todos los nodos y espera
 // respuesta de todos ellos antes de entrar
-func (ra *RASharedDB) askForPermission(request Request) {
+func (ra *RASharedDB) askForPermission(request com.Request) {
 
-	ra.ms.SendAll(request)
+	ra.ms.SendAll(&request)
 	//time.Sleep(2 * time.Second)
 	receivedReplies := 0
 	// Esperar respuestas de todos los procesos
@@ -137,7 +107,7 @@ func (ra *RASharedDB) askForPermission(request Request) {
 
 	}
 	ra.mutex.Lock()
-	ra.state = In
+	ra.state = com.In
 	ra.mutex.Unlock()
 }
 
@@ -148,8 +118,8 @@ func (ra *RASharedDB) askForPermission(request Request) {
 func (ra *RASharedDB) PostProtocol(addedChar string) {
 	ra.mutex.Lock()
 
-	ra.state = Out
-	reply := Reply{
+	ra.state = com.Out
+	reply := com.Reply{
 		Pid:            ra.ms.Me,
 		AddedChar:      addedChar,
 		VectorialClock: ra.vectorialClock,
@@ -158,13 +128,13 @@ func (ra *RASharedDB) PostProtocol(addedChar string) {
 	ra.mutex.Unlock()
 	if addedChar != "" {
 		//After a write, we send a reply to everyone so they can update their own file
-		ra.ms.SendAll(reply)
+		ra.ms.SendAll(&reply)
 		fmt.Printf("Sending update to all after write CS")
 	} else {
 		//After a read, we send Replies only to deferred peers
 		for i, val := range ra.deferredReplies {
 			if val {
-				ra.ms.Send(i, reply)
+				ra.ms.Send(i, &reply)
 				fmt.Printf("Sending deferred reply to %d", i)
 			}
 		}
@@ -184,7 +154,7 @@ func (ra *RASharedDB) Stop() {
 func (ra *RASharedDB) messageReceiver() {
 	for {
 		msg := ra.ms.Receive()
-		if req, ok := msg.(Request); ok {
+		if req, ok := msg.(*com.Request); ok {
 			//In this case we also update our internal clock
 			ra.vectorialClock[ra.ms.Me] = req.VectorialClock[req.Pid]
 			ra.updateVectorialClock(req.VectorialClock)
@@ -192,17 +162,17 @@ func (ra *RASharedDB) messageReceiver() {
 			ourClock := ra.vectorialClock[ra.ms.Me]
 			theirClock := req.VectorialClock[req.Pid]
 			//If we're out of CS and not trying
-			canGivePermission1 := ra.state == Out
+			canGivePermission1 := ra.state == com.Out
 			if canGivePermission1 {
 				fmt.Printf("Condition 1 met\n")
 			}
 			//Or if we both want to read
-			canGivePermission2 := (ra.opType == Read && req.OpType == Read)
+			canGivePermission2 := (ra.opType == com.Read && req.OpType == com.Read)
 			if canGivePermission2 {
 				fmt.Printf("Condition 2 met\n")
 			}
 			//Or if the sender's sendClock is lower than ours AND we're not already in CS
-			canGivePermission3 := (ourClock > theirClock && ra.state != In)
+			canGivePermission3 := (ourClock > theirClock && ra.state != com.In)
 			if canGivePermission3 {
 				fmt.Printf("Condition 3 met\n")
 			}
@@ -227,7 +197,7 @@ func (ra *RASharedDB) messageReceiver() {
 
 				fmt.Printf("Got CS request from %d, deferring\n", req.Pid)
 			}
-		} else if rep, ok := msg.(Reply); ok {
+		} else if rep, ok := msg.(*com.Reply); ok {
 			//We update our vectorial clock but don't update *our* clock
 			//because it's a received reply event
 
@@ -240,8 +210,8 @@ func (ra *RASharedDB) messageReceiver() {
 			//If we were not even trying to enter, then it's an after write update
 			//and we don't need to put
 			ra.mutex.Lock()
-			if ra.state != Out {
-				ra.repliesChannel <- rep
+			if ra.state != com.Out {
+				ra.repliesChannel <- *rep
 			}
 			ra.mutex.Unlock()
 
@@ -253,13 +223,13 @@ func (ra *RASharedDB) messageReceiver() {
 // after exiting a WRITE CRITICAL SECTION, empty string ("") otherwise
 func (ra *RASharedDB) sendPermission(pid int, addedChar string) {
 	ra.mutex.Lock()
-	reply := Reply{
+	reply := com.Reply{
 		Pid:            ra.ms.Me,
 		AddedChar:      addedChar,
 		VectorialClock: ra.vectorialClock,
 	}
 	ra.mutex.Unlock()
-	ra.ms.Send(pid, reply)
+	ra.ms.Send(pid, &reply)
 }
 
 // Updates our vectorial clock by using one received in a message.
@@ -272,26 +242,4 @@ func (ra *RASharedDB) updateVectorialClock(receivedClock []int) {
 	}
 	ra.mutex.Unlock()
 
-}
-
-// Convert Request to []byte using Gob
-func (r Request) ToBytes() []byte {
-	var buf bytes.Buffer
-	enc := gob.NewEncoder(&buf)
-	err := enc.Encode(r)
-	if err != nil {
-		log.Fatalf("Failed to encode Request: %v", err)
-	}
-	return buf.Bytes()
-}
-
-// Convert Reply to []byte using Gob
-func (r Reply) ToBytes() []byte {
-	var buf bytes.Buffer
-	enc := gob.NewEncoder(&buf)
-	err := enc.Encode(r)
-	if err != nil {
-		log.Fatalf("Failed to encode Reply: %v", err)
-	}
-	return buf.Bytes()
 }

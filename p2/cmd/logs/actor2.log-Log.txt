@@ -1,6 +1,0 @@
-actor2 {"actor2":1}
-Initialization Complete
-actor2 {"actor2":2}
-INFO Receiving Message
-actor2 {"actor2":3}
-INFO Example Complete
