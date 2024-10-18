@@ -26,6 +26,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/rpc"
 	"os"
 
 	//"crypto/rand"
@@ -52,7 +53,7 @@ const (
 	kLogOutputDir = "./logs_raft/"
 )
 
-type TipoOperacion struct {
+type Operacion struct {
 	Operacion string // La operaciones posibles son "leer" y "escribir"
 	Clave     string
 	Valor     string // en el caso de la lectura Valor = ""
@@ -63,12 +64,12 @@ type TipoOperacion struct {
 // "canalAplicar" (funcion NuevoNodo) de la maquina de estados
 type AplicaOperacion struct {
 	Indice    int // en la entrada de registro
-	Operacion TipoOperacion
+	Operacion Operacion
 }
 
 // Tipo de dato Go que representa un solo nodo (réplica) de raft
 type NodoRaft struct {
-	Mux sync.Mutex // Mutex para proteger acceso a estado compartido
+	Mutex sync.Mutex // Mutex para proteger acceso a estado compartido
 
 	// Host:Port de todos los nodos (réplicas) Raft, en mismo orden
 	Nodos   []rpctimeout.HostPort
@@ -76,8 +77,8 @@ type NodoRaft struct {
 	IdLider int
 	// Utilización opcional de este logger para depuración
 	// Cada nodo Raft tiene su propio registro de trazas (logs)
-	Logger *log.Logger
-
+	Logger  *log.Logger
+	Entries map[string]string
 	// Vuestros datos aqui.
 	// VALORES PERSISTENTES EN TODOS LOS SERVIDORES //
 	//mandatoActual int //para la pr4. Indica el mandato más reciente que esta réplica conoce
@@ -192,7 +193,7 @@ func (nr *NodoRaft) obtenerEstado() (int, int, bool, int) {
 // - El tercer valor es true si el nodo cree ser el lider
 // - Cuarto valor es el lider, es el indice del líder si no es él
 // - Quinto valor es el resultado de aplicar esta operación en máquina de estados
-func (nr *NodoRaft) someterOperacion(operacion TipoOperacion) (int, int,
+func (nr *NodoRaft) someterOperacion(operacion Operacion) (int, int,
 	bool, int, string) {
 	indice := -1
 	mandato := -1
@@ -201,8 +202,21 @@ func (nr *NodoRaft) someterOperacion(operacion TipoOperacion) (int, int,
 	valorADevolver := ""
 
 	fmt.Println(operacion)
-
-	// VUESTRO CODIGO AQUI
+	var comprometidos int = 0
+	for i := 0; i < len(nr.Nodos); i++ {
+		go func(peer rpctimeout.HostPort, nr *NodoRaft, comprometidos *int) {
+			client, err := rpc.DialHTTP("tcp", "localhost"+":2233")
+			if err != nil {
+				log.Fatal("dialing:", err)
+			}
+			args := ArgAppendEntries{}
+			reply := Results{}
+			err = client.Call("NodoRaft.AppendEntries", args, &reply)
+			if err != nil {
+				log.Fatal("arith error:", err)
+			}
+		}(nr.Nodos[i], nr, &comprometidos)
+	}
 
 	return indice, mandato, EsLider, idLider, valorADevolver
 }
@@ -240,7 +254,7 @@ type ResultadoRemoto struct {
 	EstadoParcial
 }
 
-func (nr *NodoRaft) SometerOperacionRaft(operacion TipoOperacion,
+func (nr *NodoRaft) SometerOperacionRaft(operacion Operacion,
 	reply *ResultadoRemoto) error {
 	reply.IndiceRegistro, reply.Mandato, reply.EsLider,
 		reply.IdLider, reply.ValorADevolver = nr.someterOperacion(operacion)
@@ -276,19 +290,25 @@ func (nr *NodoRaft) PedirVoto(peticion *ArgsPeticionVoto,
 	return nil
 }
 
+type Entry struct {
+}
 type ArgAppendEntries struct {
-	// Vuestros datos aqui
+	Entries []Entry
 }
 
 type Results struct {
-	// Vuestros datos aqui
+	success bool
 }
 
-// Metodo de tratamiento de llamadas RPC AppendEntries
+// El metodo que el leader llama en los seguidores para insertar una nueva entrada en los seguidores
 func (nr *NodoRaft) AppendEntries(args *ArgAppendEntries,
 	results *Results) error {
-	// Completar....
-
+	results.success = true
+	nr.Mutex.Lock()
+	for key, value := range args.Entries {
+		nr.Entries[key] = value
+	}
+	nr.Mutex.Unlock()
 	return nil
 }
 
