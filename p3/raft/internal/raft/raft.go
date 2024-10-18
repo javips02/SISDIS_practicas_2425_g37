@@ -145,6 +145,23 @@ func NuevoNodo(nodos []rpctimeout.HostPort, yo int,
 	}
 
 	// Añadir codigo de inicialización
+	// Inicialización de otros campos
+	nr.Entries = make(map[string]string) // Mapa vacío para las entradas
+	nr.votedFor = -1                     // No ha votado aún
+	nr.logEntries = []string{}           // Inicialmente sin entradas en el log
+	nr.commitIndex = 0                   // Sin entradas comprometidas aún
+	nr.lastApplied = 0                   // Ninguna entrada aplicada aún
+
+	// Inicialización para líder (valores volátiles)
+	numNodos := len(nodos)                // Número total de nodos
+	nr.nextIndex = make([]int, numNodos)  // Inicializar nextIndex para cada nodo
+	nr.matchIndex = make([]int, numNodos) // Inicializar matchIndex para cada nodo
+
+	// Asignar los valores iniciales para nextIndex y matchIndex
+	for i := range nr.nextIndex {
+		nr.nextIndex[i] = 1  // El índice de la siguiente entrada a enviar (inicialmente 1)
+		nr.matchIndex[i] = 0 // Ninguna entrada ha sido replicada aún
+	}
 
 	return nr
 }
