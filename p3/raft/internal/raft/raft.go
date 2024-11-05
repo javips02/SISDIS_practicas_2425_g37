@@ -198,7 +198,7 @@ func (nr *NodoRaft) obtenerEstado() (int, int, bool, int) {
 // El servicio que utilice Raft (base de datos clave/valor, por ejemplo)
 // Quiere buscar un acuerdo de posicion en registro para siguiente operacion
 // solicitada por cliente.
-
+//
 // Si el nodo no es el lider, devolver falso
 // Sino, comenzar la operacion de consenso sobre la operacion y devolver en
 // cuanto se consiga
@@ -215,10 +215,10 @@ func (nr *NodoRaft) obtenerEstado() (int, int, bool, int) {
 // - Quinto valor es el resultado de aplicar esta operación en máquina de estados
 func (nr *NodoRaft) someterOperacion(operacion Operacion) (int, int,
 	bool, int, string) {
-	indice := -1
+	indice := nr.commitIndex
 	mandato := -1
-	EsLider := false
-	idLider := -1
+	EsLider := nr.IdLider == nr.Yo
+	idLider := nr.IdLider
 	valorADevolver := ""
 
 	fmt.Println(operacion)
