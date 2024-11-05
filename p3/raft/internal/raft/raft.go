@@ -311,6 +311,7 @@ func (nr *NodoRaft) PedirVoto(peticion *ArgsPeticionVoto,
 }
 
 type Entry struct {
+	command string //TODO: pensar si hay que meter algo más
 }
 type ArgAppendEntries struct {
 	Entries []Entry
