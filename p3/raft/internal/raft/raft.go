@@ -185,9 +185,12 @@ func (nr *NodoRaft) obtenerEstado() (int, int, bool, int) {
 	var yo int = nr.Yo
 	var mandato int
 	var esLider bool
-	var idLider int = nr.IdLider
+	var idLider int
 
 	// Vuestro codigo aqui
+	mandato = 0 // De momento 0, cambiar en la práctica siguiente cuando se implemente mandato
+	esLider = nr.IdLider == nr.Yo
+	idLider = nr.IdLider
 
 	return yo, mandato, esLider, idLider
 }
@@ -355,7 +358,7 @@ func (nr *NodoRaft) AppendEntries(args *ArgAppendEntries,
 // una petición perdida, o una respuesta perdida
 //
 // Para problemas con funcionamiento de RPC, comprobar que la primera letra
-// del nombre de todo los campos de la estructura (y sus subestructuras)
+// del nombre de todos los campos de la estructura (y sus subestructuras)
 // pasadas como parametros en las llamadas RPC es una mayuscula,
 // Y que la estructura de recuperacion de resultado sea un puntero a estructura
 // y no la estructura misma.
