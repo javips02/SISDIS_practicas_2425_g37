@@ -83,8 +83,8 @@ type NodoRaft struct {
 	// Vuestros datos aqui.
 	// VALORES PERSISTENTES EN TODOS LOS SERVIDORES //
 	//mandatoActual int //para la pr4. Indica el mandato más reciente que esta réplica conoce
-	votedFor   int      //candidato que ha recibido el voto en el mandato actual
-	logEntries []string //guarda en cada entrada un comando para el estado de la máquina
+	votedFor int //candidato que ha recibido el voto en el mandato actual
+	//logEntries []string //guarda en cada entrada un comando para el estado de la máquina
 
 	// VALORES VOLÁTILES DE ESTADO EN TODOS LOS SERVIDORES //
 	commitIndex int // valor más alto de entrada comprometida por esta réplica (0...)
@@ -149,9 +149,9 @@ func NuevoNodo(nodos []rpctimeout.HostPort, yo int,
 	// Inicialización de otros campos
 	nr.Entries = make(map[string]string) // Mapa vacío para las entradas
 	nr.votedFor = -1                     // No ha votado aún
-	nr.logEntries = []string{}           // Inicialmente sin entradas en el log
-	nr.commitIndex = 0                   // Sin entradas comprometidas aún
-	nr.lastApplied = 0                   // Ninguna entrada aplicada aún
+	//nr.logEntries = []string{}           // Inicialmente sin entradas en el log
+	nr.commitIndex = 0 // Sin entradas comprometidas aún
+	nr.lastApplied = 0 // Ninguna entrada aplicada aún
 
 	// Inicialización para líder (valores volátiles)
 	numNodos := len(nodos)                // Número total de nodos
@@ -351,7 +351,9 @@ type Entry struct {
 	index int
 }
 type ArgAppendEntries struct {
-	Entries []Entry
+	Entries      []Entry
+	leaderCommit int // index del commit para el vector del líder
+	// añadir term, leadirId, precLogIndex, prevLogTerm si necesario
 }
 
 type Results struct {
@@ -362,19 +364,23 @@ type Results struct {
 // Pueden insertarse varias entradas de un paso, por ejemplo cuando el nodo revive despues de un fallo :)
 func (nr *NodoRaft) AppendEntries(args *ArgAppendEntries,
 	results *Results) error {
-	results.success = true
+	results.success = true //sin mandatos siempre será success
+	// if term < currentTerm --> reply false
+	// if !exists entry at prevLogIndex == term from prevLogTerm --> reply false (outdated)
+	//if newEntry.index == otherEntry.index && termNew != termOther --> reply false
+
+	//Append any new entries not already in the log
 	nr.Mutex.Lock()
 	for key, value := range args.Entries {
 		nr.Entries[strconv.Itoa(key)] = value.op.Operacion //meter el comando con su índice
 	}
 	nr.Mutex.Unlock()
 
-	for _, value := range args.Entries {
-		nr.logEntries = append(nr.logEntries, value.op.Operacion)
-		//TODO: sólo comprometo el string de operacion?
-		// quizá convendría meter algún índice
+	// if leader commit > commit index form current node, choose min
+	if args.leaderCommit > nr.commitIndex {
+		nr.commitIndex = min(args.leaderCommit, nr.commitIndex)
 	}
-	return nil
+	return nil //si llega hasta aquí, return NoError (error nil) de RPC
 }
 
 // --------------------------------------------------------------------------
