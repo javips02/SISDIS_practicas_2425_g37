@@ -329,6 +329,10 @@ func (nr *NodoRaft) SometerOperacionRaft(operacion Operacion,
 // Nombres de campos deben comenzar con letra mayuscula !
 type ArgsPeticionVoto struct {
 	// Vuestros datos aqui
+	// mandato int (para pr4)
+	candidateId  int //candidato pidiendo el voto
+	lastLogIndex int // indice de la ultima entrada del log del candidato
+	//lastLogTerm int (para pr4)
 }
 
 // Structura de ejemplo de respuesta de RPC PedirVoto,
@@ -338,13 +342,21 @@ type ArgsPeticionVoto struct {
 // Nombres de campos deben comenzar con letra mayuscula !
 type RespuestaPeticionVoto struct {
 	// Vuestros datos aqui
+	// mandato ...
+	voteGranted bool
 }
 
 // Metodo para RPC PedirVoto
 func (nr *NodoRaft) PedirVoto(peticion *ArgsPeticionVoto,
 	reply *RespuestaPeticionVoto) error {
 	// Vuestro codigo aqui
-
+	//if term < current term --> return false...
+	upToDateCandidate := len(nr.Entries)-1 >= peticion.lastLogIndex
+	if (nr.votedFor == -1 || nr.votedFor == nr.Yo) && upToDateCandidate {
+		reply.voteGranted = true
+	} else {
+		reply.voteGranted = false
+	}
 	return nil
 }
 
@@ -421,6 +433,17 @@ func (nr *NodoRaft) enviarPeticionVoto(nodo int, args *ArgsPeticionVoto,
 	fmt.Println(nodo, args, reply)
 
 	// Completar con la llamada RPC correcta incluida
+	client, err := rpc.DialHTTP("tcp", "localhost"+":2233")
+	if err != nil {
+		log.Println("dialing:", err)
+		return false
+	}
+	defer client.Close()
+	err = client.Call("NodoRaft.PedirVoto", args, &reply)
+	if err != nil {
+		log.Println("arith error:", err)
+		return false
+	} //TODO: falta timeout!!!
 
 	return true
 }
