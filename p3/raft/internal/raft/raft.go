@@ -28,6 +28,7 @@ import (
 	"log"
 	"net/rpc"
 	"os"
+	"strconv"
 
 	//"crypto/rand"
 	"sync"
@@ -216,26 +217,61 @@ func (nr *NodoRaft) obtenerEstado() (int, int, bool, int) {
 func (nr *NodoRaft) someterOperacion(operacion Operacion) (int, int,
 	bool, int, string) {
 	indice := nr.commitIndex
-	mandato := -1
+	mandato := -1 //TODO: cambiar en la siguiente práctica
 	EsLider := nr.IdLider == nr.Yo
 	idLider := nr.IdLider
 	valorADevolver := ""
 
+	// no lider => devolver falso (incluye quién es lider en la respuesta, el cliente tiene que reenviar
+	if !EsLider {
+		valorADevolver = "false"
+		return indice, mandato, EsLider, idLider, valorADevolver
+	}
+
 	fmt.Println(operacion)
+	// Definir la operación a someter
+	entrada := Entry{
+		op: operacion, // Aquí `operacion` es el parámetro que recibes en `someterOperacion`
+
+	}
+
 	var comprometidos int = 0
+	//barrera:
+	var wg sync.WaitGroup // WaitGroup para esperar a que todas las goroutines terminen
+
 	for i := 0; i < len(nr.Nodos); i++ {
+		wg.Add(1) // Incrementar el contador de goroutines pendientes
+
 		go func(peer rpctimeout.HostPort, nr *NodoRaft, comprometidos *int) {
+			defer wg.Done() // Decrementar el contador de goroutines pendientes al finalizar la goroutine
 			client, err := rpc.DialHTTP("tcp", "localhost"+":2233")
 			if err != nil {
 				log.Fatal("dialing:", err)
 			}
-			args := ArgAppendEntries{}
+			//TODO: debería meter todas las entradas que no están sincronizadas con un bucle?
+			args := ArgAppendEntries{Entries: []Entry{entrada}} //meter entrada/s para comprometer
 			reply := Results{}
 			err = client.Call("NodoRaft.AppendEntries", args, &reply)
 			if err != nil {
 				log.Fatal("arith error:", err)
 			}
+			// si se ha comprometido la entrada en el nodo i,
+			// aumentar el contador de forma atómica
+			if reply.success {
+				nr.Mutex.Lock()
+				*comprometidos++
+				nr.Mutex.Unlock()
+			}
 		}(nr.Nodos[i], nr, &comprometidos)
+	}
+	// esperar a que todos los subprocesos alcancen la barrera
+	wg.Wait()
+
+	//caso de exito al comprometer la entrada
+	if comprometidos >= len(nr.Nodos)/2 {
+		valorADevolver = operacion.Operacion
+	} else {
+		valorADevolver = "false"
 	}
 
 	return indice, mandato, EsLider, idLider, valorADevolver
@@ -311,7 +347,8 @@ func (nr *NodoRaft) PedirVoto(peticion *ArgsPeticionVoto,
 }
 
 type Entry struct {
-	command string //TODO: pensar si hay que meter algo más
+	op    Operacion
+	index int
 }
 type ArgAppendEntries struct {
 	Entries []Entry
@@ -322,14 +359,21 @@ type Results struct {
 }
 
 // El metodo que el leader llama en los seguidores para insertar una nueva entrada en los seguidores
+// Pueden insertarse varias entradas de un paso, por ejemplo cuando el nodo revive despues de un fallo :)
 func (nr *NodoRaft) AppendEntries(args *ArgAppendEntries,
 	results *Results) error {
 	results.success = true
 	nr.Mutex.Lock()
 	for key, value := range args.Entries {
-		nr.Entries[key] = value
+		nr.Entries[strconv.Itoa(key)] = value.op.Operacion //meter el comando con su índice
 	}
 	nr.Mutex.Unlock()
+
+	for _, value := range args.Entries {
+		nr.logEntries = append(nr.logEntries, value.op.Operacion)
+		//TODO: sólo comprometo el string de operacion?
+		// quizá convendría meter algún índice
+	}
 	return nil
 }
 
