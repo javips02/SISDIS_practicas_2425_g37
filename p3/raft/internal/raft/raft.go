@@ -267,6 +267,7 @@ func (nr *NodoRaft) someterOperacion(operacion Operacion) (int, int,
 		}(nr.Nodos[i], nr, &comprometidos)
 	}
 	// esperar a que todos los subprocesos alcancen la barrera
+	// claro, no tengo que esperar a todos... apañar esto TODO
 	wg.Wait()
 
 	//caso de exito al comprometer la entrada
@@ -431,19 +432,18 @@ func (nr *NodoRaft) enviarPeticionVoto(nodo int, args *ArgsPeticionVoto,
 	reply *RespuestaPeticionVoto) bool {
 
 	fmt.Println(nodo, args, reply)
-
 	// Completar con la llamada RPC correcta incluida
-	client, err := rpc.DialHTTP("tcp", "localhost"+":2233")
+	// Configura el host del nodo destino para la llamada RPC.
+	peer := nr.Nodos[nodo]
+	// Llamada RPC con timeout
+	err := peer.CallTimeout("NodoRaft.PedirVoto", args, reply, 2*time.Second) // TODO: ajustar timeout
 	if err != nil {
-		log.Println("dialing:", err)
+		log.Println("Error al enviar petición de voto:", err)
 		return false
 	}
-	defer client.Close()
-	err = client.Call("NodoRaft.PedirVoto", args, &reply)
-	if err != nil {
-		log.Println("arith error:", err)
+	if !reply.voteGranted {
+		log.Println("Voto denegado a ", nr.Yo, " desde ", nodo)
 		return false
-	} //TODO: falta timeout!!!
-
+	}
 	return true
 }
