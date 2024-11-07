@@ -70,7 +70,7 @@ type AplicaOperacion struct {
 
 // Tipo de dato Go que representa un solo nodo (réplica) de raft
 type NodoRaft struct {
-	Mutex sync.Mutex // Mutex para proteger acceso a estado compartido
+	mutex sync.Mutex // Mutex para proteger acceso a estado compartido
 
 	// Host:Port de todos los nodos (réplicas) Raft, en mismo orden
 	Nodos   []rpctimeout.HostPort
@@ -185,15 +185,15 @@ func (nr *NodoRaft) para() {
 // El tercer valor es true si el nodo cree ser el lider
 // Cuarto valor es el lider, es el indice del líder si no es él
 func (nr *NodoRaft) obtenerEstado() (int, int, bool, int) {
-	var yo int = nr.Yo
-	var mandato int
-	var esLider bool
-	var idLider int
 
-	// Vuestro codigo aqui
-	mandato = 0 // De momento 0, cambiar en la práctica siguiente cuando se implemente mandato
-	esLider = nr.IdLider == nr.Yo
-	idLider = nr.IdLider
+	nr.mutex.Lock()
+	var yo int = nr.Yo
+	esLider := nr.IdLider == nr.Yo
+	idLider := nr.IdLider
+	nr.mutex.Unlock()
+	mandato := 0
+
+	nr.mutex.Unlock()
 
 	return yo, mandato, esLider, idLider
 }
@@ -218,10 +218,13 @@ func (nr *NodoRaft) obtenerEstado() (int, int, bool, int) {
 // - Quinto valor es el resultado de aplicar esta operación en máquina de estados
 func (nr *NodoRaft) someterOperacion(operacion Operacion) (int, int,
 	bool, int, string) {
+	nr.mutex.Lock()
 	indice := nr.commitIndex
 	mandato := -1 //TODO: cambiar en la siguiente práctica
 	EsLider := nr.IdLider == nr.Yo
 	idLider := nr.IdLider
+	nr.mutex.Unlock()
+
 	valorADevolver := ""
 
 	// no lider => devolver falso (incluye quién es lider en la respuesta, el cliente tiene que reenviar
@@ -260,9 +263,9 @@ func (nr *NodoRaft) someterOperacion(operacion Operacion) (int, int,
 			// si se ha comprometido la entrada en el nodo i,
 			// aumentar el contador de forma atómica
 			if reply.success {
-				nr.Mutex.Lock()
+				nr.mutex.Lock()
 				*comprometidos++
-				nr.Mutex.Unlock()
+				nr.mutex.Unlock()
 			}
 		}(nr.Nodos[i], nr, &comprometidos)
 	}
@@ -313,10 +316,10 @@ type ResultadoRemoto struct {
 	EstadoParcial
 }
 
-func (nr *NodoRaft) SometerOperacionRaft(operacion Operacion,
+func (nr *NodoRaft) SometerOperacionRaft(operacion *Operacion,
 	reply *ResultadoRemoto) error {
 	reply.IndiceRegistro, reply.Mandato, reply.EsLider,
-		reply.IdLider, reply.ValorADevolver = nr.someterOperacion(operacion)
+		reply.IdLider, reply.ValorADevolver = nr.someterOperacion(*operacion)
 	return nil
 }
 
@@ -385,11 +388,11 @@ func (nr *NodoRaft) AppendEntries(args *ArgAppendEntries,
 	//if newEntry.index == otherEntry.index && termNew != termOther --> reply false
 
 	//Append any new entries not already in the log
-	nr.Mutex.Lock()
+	nr.mutex.Lock()
 	for key, value := range args.Entries {
 		nr.Entries[strconv.Itoa(key)] = value.op.Operacion //meter el comando con su índice
 	}
-	nr.Mutex.Unlock()
+	nr.mutex.Unlock()
 
 	// if leader commit > commit index form current node, choose min
 	if args.leaderCommit > nr.commitIndex {

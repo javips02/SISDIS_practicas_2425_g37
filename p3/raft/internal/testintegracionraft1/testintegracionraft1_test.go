@@ -175,8 +175,15 @@ func (cfg *configDespliegue) falloAnteriorElegirNuevoLiderTest3(t *testing.T) {
 	fmt.Printf("Lider inicial\n")
 	cfg.pruebaUnLider(3)
 
-	// Desconectar lider
-	// ???
+	_, _, _, idLider := cfg.obtenerEstadoRemoto(0)
+
+	var reply raft.Vacio
+
+	err := cfg.nodosRaft[idLider].CallTimeout("NodoRaft.ParaNodo",
+		raft.Vacio{}, &reply, 10*time.Millisecond)
+	check.CheckError(err, "Error al parar primero leader")
+
+	time.Sleep(1000 * time.Millisecond)
 
 	fmt.Printf("Comprobar nuevo lider\n")
 	cfg.pruebaUnLider(3)
@@ -189,9 +196,75 @@ func (cfg *configDespliegue) falloAnteriorElegirNuevoLiderTest3(t *testing.T) {
 
 // 3 operaciones comprometidas con situacion estable y sin fallos - 3 NODOS RAFT
 func (cfg *configDespliegue) tresOperacionesComprometidasEstable(t *testing.T) {
-	t.Skip("SKIPPED tresOperacionesComprometidasEstable")
+	t.Skip("SKIPPED FalloAnteriorElegirNuevoLiderTest3")
 
-	// A COMPLETAR .....
+	fmt.Println(t.Name(), ".....................")
+
+	cfg.startDistributedProcesses()
+
+	fmt.Printf("Lider inicial\n")
+	cfg.pruebaUnLider(3)
+
+	_, _, _, idLider := cfg.obtenerEstadoRemoto(0)
+
+	var reply raft.Vacio
+
+	var someterReply bool
+
+	err := cfg.nodosRaft[idLider].CallTimeout("NodoRaft.ParaNodo",
+		raft.Vacio{}, &reply, 10*time.Millisecond)
+	check.CheckError(err, "Error al parar primero leader")
+	op1 := raft.Operacion{
+		Operacion: "write",
+		Clave:     "hola-it",
+		Valor:     "ciao",
+	}
+	op2 := raft.Operacion{
+		Operacion: "write",
+		Clave:     "hola-en",
+		Valor:     "hello",
+	}
+	op3 := raft.Operacion{
+		Operacion: "read",
+		Clave:     "hola-en",
+	}
+	op4 := raft.Operacion{
+		Operacion: "read",
+		Clave:     "hola-it",
+	}
+
+	err = cfg.nodosRaft[idLider].CallTimeout("NodoRaft.SometerOperacionRaft",
+		&op1, &someterReply, 10*time.Millisecond)
+	check.CheckError(err, "Error al someter operaciòn 1")
+	if !(someterReply) {
+		cfg.t.Fatalf("Operaciòn no comprometida")
+	}
+
+	err = cfg.nodosRaft[idLider].CallTimeout("NodoRaft.SometerOperacionRaft",
+		&op2, &someterReply, 10*time.Millisecond)
+	check.CheckError(err, "Error al someter operaciòn 2")
+	if !(someterReply) {
+		cfg.t.Fatalf("Operaciòn no comprometida")
+	}
+
+	err = cfg.nodosRaft[idLider].CallTimeout("NodoRaft.SometerOperacionRaft",
+		&op3, &someterReply, 10*time.Millisecond)
+	check.CheckError(err, "Error al someter operaciòn 3")
+	if !(someterReply) {
+		cfg.t.Fatalf("Operaciòn no comprometida")
+	}
+
+	err = cfg.nodosRaft[idLider].CallTimeout("NodoRaft.SometerOperacionRaft",
+		&op4, &someterReply, 10*time.Millisecond)
+	check.CheckError(err, "Error al someter operaciòn 4")
+	if !(someterReply) {
+		cfg.t.Fatalf("Operaciòn no comprometida")
+	}
+
+	// Parar réplicas almacenamiento en remoto
+	cfg.stopDistributedProcesses() //parametros
+
+	fmt.Println(".............", t.Name(), "Superado")
 }
 
 // --------------------------------------------------------------------------
