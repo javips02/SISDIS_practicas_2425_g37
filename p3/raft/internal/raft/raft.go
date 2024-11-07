@@ -76,6 +76,12 @@ type NodoRaft struct {
 	Nodos   []rpctimeout.HostPort
 	Yo      int // indice de este nodos en campo array "nodos"
 	IdLider int
+
+	//Time before the replicas should consider a timeout and start election
+	timeoutTime time.Duration
+	//Time before the leader should send a heartbeat
+	heartbeatTime time.Duration
+
 	// Utilización opcional de este logger para depuración
 	// Cada nodo Raft tiene su propio registro de trazas (logs)
 	Logger  *log.Logger
@@ -92,9 +98,9 @@ type NodoRaft struct {
 
 	// VALORES VOLÁTILES DE ESTADO EN TODOS LOS SERVIDORES //
 
-	commitIndex     int          // valor más alto de entrada comprometida por esta réplica (0...)
-	lastApplied     int          // índice de la entrada más alta aplicada a nuestra máquina de estados (0 ...)
-	timeoutEleccion *time.Ticker // tiempo restante para iniciar una nueva eleccion (seguidores)
+	commitIndex     int         // valor más alto de entrada comprometida por esta réplica (0...)
+	lastApplied     int         // índice de la entrada más alta aplicada a nuestra máquina de estados (0 ...)
+	timeoutEleccion *time.Timer // tiempo restante para iniciar una nueva eleccion (seguidores)
 	// VALORES VOLÁTILES EN RÉPLICAS LÍDER (reinicializar estos valores después de cada elección) //
 
 	nextIndex       []int        //en cada posición, el índice de la siguiente entrada a mandar al servidor (leader_lastLog+1...)
@@ -172,9 +178,9 @@ func NuevoNodo(nodos []rpctimeout.HostPort, yo int,
 	// Inicializacion de timers
 	nr.numVotes = 0
 	nr.leaderHBtime = 250
-	nr.timeoutEleccion = time.NewTicker(randomElectionTimeout())
-	nr.leaderHeartBeat = time.NewTicker(0) //desactivado en principio
-	go nr.monitorizarTemporizadoresRaft()  // monitorizar timeout eleccion y HB
+	nr.timeoutEleccion = time.NewTimer(randomElectionTimeout())
+	nr.leaderHeartBeat = time.NewTicker(randomHeartbeatTimeout()) //desactivado en principio
+	go nr.monitorizarTemporizadoresRaft()                         // monitorizar timeout eleccion y HB
 	return nr
 }
 
@@ -183,6 +189,10 @@ func NuevoNodo(nodos []rpctimeout.HostPort, yo int,
 // entre 400 y 600
 func randomElectionTimeout() time.Duration {
 	return time.Duration(400+rand.Intn(200)) * time.Millisecond
+}
+
+func randomHeartbeatTimeout() time.Duration {
+	return time.Duration(150+rand.Intn(50)) * time.Millisecond
 }
 
 // Metodo Para() utilizado cuando no se necesita mas al nodo
@@ -206,7 +216,6 @@ func (nr *NodoRaft) obtenerEstado() (int, int, bool, int) {
 	var yo int = nr.Yo
 	esLider := nr.IdLider == nr.Yo
 	idLider := nr.IdLider
-	nr.mutex.Unlock()
 	mandato := 0
 
 	nr.mutex.Unlock()
@@ -366,6 +375,13 @@ type RespuestaPeticionVoto struct {
 	voteGranted bool
 }
 
+// Reset heartbeat counter
+func (nr *NodoRaft) Heartbeat(input *Vacio,
+	output *Vacio) error {
+	nr.timeoutEleccion.Reset(nr.heartbeatTime)
+	return nil
+}
+
 // Metodo para RPC PedirVoto
 func (nr *NodoRaft) PedirVoto(peticion *ArgsPeticionVoto,
 	reply *RespuestaPeticionVoto) error {
@@ -473,22 +489,40 @@ func (nr *NodoRaft) enviarPeticionVoto(nodo int, args *ArgsPeticionVoto,
 
 func (nr *NodoRaft) monitorizarTemporizadoresRaft() {
 	for {
-		// !Lider && (timeoutEleccion == 0) --> convocar elecciones
-		<-nr.timeoutEleccion.C
-		nr.Mutex.Lock()
-		if nr.IdLider != nr.Yo {
-			nr.iniciarEleccion()
-		}
-		nr.Mutex.Unlock()
+		select {
+		//In this case, leader hasn't sent a heartbeat in a while, so we start eection
+		case <-nr.timeoutEleccion.C: // Election timeout case
+			nr.mutex.Lock()
+			amLeader := nr.IdLider != nr.Yo
+			nr.mutex.Unlock()
+			if !amLeader { // If I'm not the leader
+				nr.iniciarEleccion() // Start election
+			}
 
-		// Lider && heartbeat==0 --> renovar y no ser sustituido si sigue vivo
-		<-nr.leaderHeartBeat.C
-		nr.Mutex.Lock()
-		if nr.IdLider == nr.Yo {
-			nr.leaderHeartBeat = time.NewTicker(
-				time.Duration(nr.leaderHBtime) * time.Millisecond)
+		case <-nr.leaderHeartBeat.C: // Leader heartbeat case
+			nr.mutex.Lock()
+			amLeader := nr.IdLider != nr.Yo
+			nr.mutex.Unlock()
+
+			if amLeader { // If I am the leader
+				nr.enviarLatidosATodos()
+			}
 		}
-		nr.Mutex.Unlock()
+	}
+}
+
+func (nr *NodoRaft) enviarLatidosATodos() {
+	for i := 0; i < len(nr.Nodos); i++ {
+		go func(nr *NodoRaft) {
+			for i := 0; i < len(nr.Nodos); i++ {
+				args := Vacio{}
+				reply := Vacio{}
+				err := nr.Nodos[i].CallTimeout("NodoRaft.Heartbeat", &args, &reply, 10*time.Millisecond)
+				if err != nil {
+					//Si el nodo falla nos da igual
+				}
+			}
+		}(nr)
 	}
 }
 
@@ -519,9 +553,9 @@ func (nr *NodoRaft) iniciarEleccion() {
 	for i := 0; i < len(nr.Nodos)-1; i++ { // Espera len(nr.Nodos)-1 respuestas
 		resp := <-responses // Recibe una respuesta del canal
 		if resp.voteGranted {
-			nr.Mutex.Lock()
+			nr.mutex.Lock()
 			nr.numVotes++
-			nr.Mutex.Unlock()
+			nr.mutex.Unlock()
 			if nr.numVotes > len(nr.Nodos) {
 				close(responses)
 				break

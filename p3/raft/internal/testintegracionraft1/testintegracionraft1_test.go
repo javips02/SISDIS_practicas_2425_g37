@@ -148,7 +148,7 @@ func (cfg *configDespliegue) soloArranqueYparadaTest1(t *testing.T) {
 
 // Primer lider en marcha - 3 NODOS RAFT
 func (cfg *configDespliegue) elegirPrimerLiderTest2(t *testing.T) {
-	t.Skip("SKIPPED ElegirPrimerLiderTest2")
+	//t.Skip("SKIPPED ElegirPrimerLiderTest2")
 
 	fmt.Println(t.Name(), ".....................")
 
