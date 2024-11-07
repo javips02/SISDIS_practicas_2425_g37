@@ -178,9 +178,11 @@ func NuevoNodo(nodos []rpctimeout.HostPort, yo int,
 	// Inicializacion de timers
 	nr.numVotes = 0
 	nr.leaderHBtime = 250
-	nr.timeoutEleccion = time.NewTimer(randomElectionTimeout())
-	nr.leaderHeartBeat = time.NewTicker(randomHeartbeatTimeout()) //desactivado en principio
-	go nr.monitorizarTemporizadoresRaft()                         // monitorizar timeout eleccion y HB
+	nr.timeoutTime = randomElectionTimeout()
+	nr.timeoutEleccion = time.NewTimer(nr.timeoutTime)
+	nr.heartbeatTime = randomHeartbeatTimeout()
+	nr.leaderHeartBeat = time.NewTicker(nr.heartbeatTime)
+	go nr.monitorizarTemporizadoresRaft() // monitorizar timeout eleccion y HB
 	return nr
 }
 
@@ -378,6 +380,7 @@ type RespuestaPeticionVoto struct {
 // Reset heartbeat counter
 func (nr *NodoRaft) Heartbeat(input *Vacio,
 	output *Vacio) error {
+	fmt.Println("Resetting election timeout")
 	nr.timeoutEleccion.Reset(nr.heartbeatTime)
 	return nil
 }
@@ -488,23 +491,28 @@ func (nr *NodoRaft) enviarPeticionVoto(nodo int, args *ArgsPeticionVoto,
 // --------------------------------------------------------------------------
 
 func (nr *NodoRaft) monitorizarTemporizadoresRaft() {
+	fmt.Println("Started monitorizar")
 	for {
 		select {
 		//In this case, leader hasn't sent a heartbeat in a while, so we start eection
 		case <-nr.timeoutEleccion.C: // Election timeout case
+			fmt.Println("Election!")
 			nr.mutex.Lock()
 			amLeader := nr.IdLider != nr.Yo
+			nr.timeoutEleccion.Stop()
 			nr.mutex.Unlock()
 			if !amLeader { // If I'm not the leader
 				nr.iniciarEleccion() // Start election
 			}
 
 		case <-nr.leaderHeartBeat.C: // Leader heartbeat case
+
 			nr.mutex.Lock()
-			amLeader := nr.IdLider != nr.Yo
+			amLeader := nr.IdLider == nr.Yo
 			nr.mutex.Unlock()
 
 			if amLeader { // If I am the leader
+				fmt.Println("Am leader")
 				nr.enviarLatidosATodos()
 			}
 		}
