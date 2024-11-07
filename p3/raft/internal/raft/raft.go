@@ -506,3 +506,10 @@ func (nr *NodoRaft) iniciarEleccion() {
 		}
 	}
 }
+
+func (nr *NodoRaft) convertirEnLider() {
+	nr.IdLider = nr.Yo
+	nr.leaderHeartBeat = time.NewTicker(
+		time.Duration(nr.leaderHBtime) * time.Millisecond)
+	// Inicializar nextIndex y matchIndex para el envío de registros?
+}
