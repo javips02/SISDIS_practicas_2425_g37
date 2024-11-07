@@ -87,6 +87,7 @@ type NodoRaft struct {
 	//mandatoActual int //para la pr4. Indica el mandato más reciente que esta réplica conoce
 	votedFor     int //candidato que ha recibido el voto en el mandato actual
 	leaderHBtime int //tiempo en ms par ael latido del lider
+	numVotes     int //number of votes recieved in the current election
 	//el log es Entries map[string][string] que venía dado
 
 	// VALORES VOLÁTILES DE ESTADO EN TODOS LOS SERVIDORES //
@@ -169,6 +170,7 @@ func NuevoNodo(nodos []rpctimeout.HostPort, yo int,
 	}
 
 	// Inicializacion de timers
+	nr.numVotes = 0
 	nr.leaderHBtime = 250
 	nr.timeoutEleccion = time.NewTicker(randomElectionTimeout())
 	nr.leaderHeartBeat = time.NewTicker(0) //desactivado en principio
@@ -488,21 +490,39 @@ func (nr *NodoRaft) monitorizarTemporizadoresRaft() {
 }
 
 func (nr *NodoRaft) iniciarEleccion() {
-
 	nr.votedFor = nr.Yo // Se vota a sí mismo
 	//Preparar argumentos de peticion y repsuesta al voto
 	peticion := ArgsPeticionVoto{
-		candidateId:  123, // Reemplaza con el ID del candidato
-		lastLogIndex: 456, // Reemplaza con el índice del último log
-	}
-	respuesta := RespuestaPeticionVoto{
-		voteGranted: false,
-		//mandato --> ...
+		candidateId:  nr.votedFor,
+		lastLogIndex: nr.lastApplied,
 	}
 
-	for i, _ := range nr.Nodos {
+	// Lanza una goroutine para cada nodo excepto el propio
+	responses := make(chan RespuestaPeticionVoto) // Canal respuestas RPC
+	for i := range nr.Nodos {
 		if i != nr.Yo {
-			go nr.enviarPeticionVoto(i, &peticion, &respuesta)
+			go func(nodoID int) {
+				var respuesta = RespuestaPeticionVoto{
+					voteGranted: false,
+					//mandato --> ...
+				}
+				nr.enviarPeticionVoto(nodoID, &peticion, &respuesta)
+				responses <- respuesta // Envía la respuesta recibida al canal
+			}(i)
+		}
+	}
+
+	// Procesa las respuestas a medida que llegan
+	for i := 0; i < len(nr.Nodos)-1; i++ { // Espera len(nr.Nodos)-1 respuestas
+		resp := <-responses // Recibe una respuesta del canal
+		if resp.voteGranted {
+			nr.Mutex.Lock()
+			nr.numVotes++
+			nr.Mutex.Unlock()
+			if nr.numVotes > len(nr.Nodos) {
+				close(responses)
+				break
+			}
 		}
 	}
 }
