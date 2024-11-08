@@ -190,7 +190,6 @@ func NuevoNodo(nodos []rpctimeout.HostPort, yo int,
 		nr.matchIndex[i] = 0 // Ninguna entrada ha sido replicada aún
 	}
 
-
 	go nr.monitorizarTemporizadoresRaft() // monitorizar timeout eleccion y HB
 	//IdNodo, Mandato, EsLider, IdLider := nr.obtenerEstado()
 	nr.Logger.Println(nr.obtenerEstado())
@@ -541,9 +540,7 @@ func (nr *NodoRaft) enviarPeticionVoto(nodo int, args *ArgsPeticionVoto,
 // --------------------------------------------------------------------------
 
 func (nr *NodoRaft) monitorizarTemporizadoresRaft() {
-<<<<<<< HEAD
-	nr.Logger.Println("Started monitorizar")
-=======
+
 	// Inicializacion de timers
 	time.Sleep(1 * time.Second)
 	nr.timeoutTime = randomElectionTimeout()
@@ -558,7 +555,7 @@ func (nr *NodoRaft) monitorizarTemporizadoresRaft() {
 	//So that channel is created at least
 
 	fmt.Println("Started monitorizar")
->>>>>>> 0dd7bff0d1dbe510353e858737a20cec889e1353
+
 	for {
 		select {
 		//In this case, leader hasn't sent a heartbeat in a while, so we start eection
