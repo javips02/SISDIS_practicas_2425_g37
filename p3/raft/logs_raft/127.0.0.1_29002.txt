@@ -1,1 +1,1 @@
-127.0.0.1_29002 -> 01:46:56.464836 raft.go:154: logger initialized
+127.0.0.1_29002 -> 01:54:00.185937 raft.go:154: logger initialized

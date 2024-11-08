@@ -390,7 +390,6 @@ type RespuestaPeticionVoto struct {
 // Reset heartbeat counter
 func (nr *NodoRaft) Heartbeat(input *Vacio,
 	output *Vacio) error {
-	fmt.Println("Resetting election timeout")
 	nr.timeoutEleccion.Reset(nr.heartbeatTime)
 	return nil
 }
@@ -402,11 +401,12 @@ func (nr *NodoRaft) PedirVoto(peticion *ArgsPeticionVoto,
 	nr.mutex.Lock()
 	//A process remains a follower as long as he gets RPCs from leaders or candidates
 	nr.timeoutEleccion.Reset(nr.timeoutTime)
-	if peticion.Mandato >= nr.mandatoActual {
+	if peticion.Mandato > nr.mandatoActual {
 		nr.mandatoActual = peticion.Mandato
 		nr.votedFor = -1
 	}
 	//upToDateCandidate := len(nr.Entries)-1 >= peticion.LastLogIndex
+	fmt.Print("Got PedirVoto by ", peticion.CandidateId)
 	if nr.votedFor == -1 {
 		nr.votedFor = peticion.CandidateId
 		reply.VoteGranted = true
@@ -526,7 +526,6 @@ func (nr *NodoRaft) monitorizarTemporizadoresRaft() {
 			}
 
 		case <-nr.leaderHeartBeat.C: // Leader heartbeat case
-			fmt.Println("Locking mutex ")
 			nr.mutex.Lock()
 			amLeader := nr.IdLider == nr.Yo
 			nr.mutex.Unlock()
@@ -588,7 +587,8 @@ func (nr *NodoRaft) iniciarEleccion() {
 
 	electionEnd := time.NewTimer(2500 * time.Millisecond)
 
-	grantedVotes := 0
+	//We voted for ourselves
+	grantedVotes := 1
 	for {
 		select {
 		case <-electionEnd.C:
