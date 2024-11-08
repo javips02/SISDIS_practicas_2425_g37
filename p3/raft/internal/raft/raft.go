@@ -54,6 +54,15 @@ const (
 	kLogOutputDir = "./logs_raft/"
 )
 
+type State string
+
+// Define the enum values
+const (
+	Leader    State = "leader"
+	Candidate State = "candidate"
+	Follower  State = "follower"
+)
+
 type Operacion struct {
 	Operacion string // La operaciones posibles son "leer" y "escribir"
 	Clave     string
@@ -76,6 +85,7 @@ type NodoRaft struct {
 	Nodos   []rpctimeout.HostPort
 	Yo      int // indice de este nodos en campo array "nodos"
 	IdLider int
+	State   State
 
 	//Time before the replicas should consider a timeout and start election
 	timeoutTime time.Duration
@@ -97,14 +107,14 @@ type NodoRaft struct {
 
 	// VALORES VOLÁTILES DE ESTADO EN TODOS LOS SERVIDORES //
 
-	commitIndex     int         // valor más alto de entrada comprometida por esta réplica (0...)
-	lastApplied     int         // índice de la entrada más alta aplicada a nuestra máquina de estados (0 ...)
-	timeoutEleccion *time.Timer // tiempo restante para iniciar una nueva eleccion (seguidores)
+	commitIndex  int         // valor más alto de entrada comprometida por esta réplica (0...)
+	lastApplied  int         // índice de la entrada más alta aplicada a nuestra máquina de estados (0 ...)
+	timeoutTimer *time.Timer // tiempo restante para iniciar una nueva eleccion (seguidores)
 	// VALORES VOLÁTILES EN RÉPLICAS LÍDER (reinicializar estos valores después de cada elección) //
 
-	nextIndex       []int        //en cada posición, el índice de la siguiente entrada a mandar al servidor (leader_lastLog+1...)
-	matchIndex      []int        //índice de la entrada más alta que cada server sabe que está replicada en sí mismo (0...)
-	leaderHeartBeat *time.Ticker //tiempo restante para dar un nuevo latido
+	nextIndex             []int        //en cada posición, el índice de la siguiente entrada a mandar al servidor (leader_lastLog+1...)
+	matchIndex            []int        //índice de la entrada más alta que cada server sabe que está replicada en sí mismo (0...)
+	leaderHeartBeatTicker *time.Ticker //tiempo restante para dar un nuevo latido
 }
 
 // Creacion de un nuevo nodo de eleccion
@@ -128,6 +138,7 @@ func NuevoNodo(nodos []rpctimeout.HostPort, yo int,
 	nr.Yo = yo
 	nr.mandatoActual = 0
 	nr.IdLider = -1
+	nr.State = Follower
 
 	if kEnableDebugLogs {
 		nombreNodo := nodos[yo].Host() + "_" + nodos[yo].Port()
@@ -183,9 +194,9 @@ func NuevoNodo(nodos []rpctimeout.HostPort, yo int,
 	fmt.Println("Election timeout: ", nr.timeoutTime, "ms")
 	fmt.Println("Heartbeat interval: ", nr.timeoutTime, "ms")
 
-	nr.timeoutEleccion = time.NewTimer(nr.timeoutTime)
-	nr.leaderHeartBeat = time.NewTicker(nr.heartbeatTime)
-	nr.leaderHeartBeat.Stop()
+	nr.timeoutTimer = time.NewTimer(nr.timeoutTime)
+	nr.leaderHeartBeatTicker = time.NewTicker(nr.heartbeatTime)
+	nr.leaderHeartBeatTicker.Stop()
 	//So that channel is created at least
 
 	go nr.monitorizarTemporizadoresRaft() // monitorizar timeout eleccion y HB
@@ -194,9 +205,9 @@ func NuevoNodo(nodos []rpctimeout.HostPort, yo int,
 
 // Metodo randomElectionTimeout() utilizado cuando queremos asignar un tiempo
 // limite sin lider dentor de cada nodo. Devuelve un tiempo aleatorio en ms
-// entre 300 y 600
+// entre 200 y 400
 func randomElectionTimeout() time.Duration {
-	return time.Duration(300+rand.Intn(300)) * time.Millisecond
+	return time.Duration(200+rand.Intn(200)) * time.Millisecond
 }
 
 func heartbeatTimeout() time.Duration {
@@ -388,9 +399,17 @@ type RespuestaPeticionVoto struct {
 }
 
 // Reset heartbeat counter
-func (nr *NodoRaft) Heartbeat(input *Vacio,
+func (nr *NodoRaft) Heartbeat(args *HeartbeatArgs,
 	output *Vacio) error {
-	nr.timeoutEleccion.Reset(nr.heartbeatTime)
+	fmt.Println("PUM")
+	nr.timeoutTimer.Reset(nr.timeoutTime)
+	nr.mutex.Lock()
+	if nr.mandatoActual < args.Mandato {
+		nr.mandatoActual = args.Mandato
+		nr.IdLider = args.IdLeader
+		nr.State = Follower
+	}
+	nr.mutex.Unlock()
 	return nil
 }
 
@@ -400,12 +419,12 @@ func (nr *NodoRaft) PedirVoto(peticion *ArgsPeticionVoto,
 
 	nr.mutex.Lock()
 	//A process remains a follower as long as he gets RPCs from leaders or candidates
-	nr.timeoutEleccion.Reset(nr.timeoutTime)
+	nr.timeoutTimer.Reset(nr.timeoutTime)
 	if peticion.Mandato > nr.mandatoActual {
 		nr.mandatoActual = peticion.Mandato
 		nr.votedFor = -1
 	}
-	//upToDateCandidate := len(nr.Entries)-1 >= peticion.LastLogIndex
+
 	fmt.Print("Got PedirVoto by ", peticion.CandidateId)
 	if nr.votedFor == -1 {
 		nr.votedFor = peticion.CandidateId
@@ -414,6 +433,13 @@ func (nr *NodoRaft) PedirVoto(peticion *ArgsPeticionVoto,
 		reply.VoteGranted = false
 	}
 	nr.mutex.Unlock()
+
+	if reply.VoteGranted {
+		fmt.Print("Granted vote request to ", peticion.CandidateId)
+	} else {
+		fmt.Print("Denied vote request to ", peticion.CandidateId)
+	}
+	fmt.Println(", voted for: ", nr.votedFor)
 
 	return nil
 }
@@ -424,8 +450,13 @@ type Entry struct {
 }
 type ArgAppendEntries struct {
 	Entries      []Entry
-	leaderCommit int // index del commit para el vector del líder
+	LeaderCommit int // index del commit para el vector del líder
 	// añadir term, leadirId, precLogIndex, prevLogTerm si necesario
+}
+
+type HeartbeatArgs struct {
+	IdLeader int
+	Mandato  int
 }
 
 type Results struct {
@@ -450,8 +481,8 @@ func (nr *NodoRaft) AppendEntries(args *ArgAppendEntries,
 	nr.mutex.Unlock()
 
 	// if leader commit > commit index form current node, choose min
-	if args.leaderCommit > nr.commitIndex {
-		nr.commitIndex = min(args.leaderCommit, nr.commitIndex)
+	if args.LeaderCommit > nr.commitIndex {
+		nr.commitIndex = min(args.LeaderCommit, nr.commitIndex)
 	}
 	return nil //si llega hasta aquí, return NoError (error nil) de RPC
 }
@@ -489,20 +520,22 @@ func (nr *NodoRaft) AppendEntries(args *ArgAppendEntries,
 func (nr *NodoRaft) enviarPeticionVoto(nodo int, args *ArgsPeticionVoto,
 	reply *RespuestaPeticionVoto) bool {
 
-	fmt.Println(nodo, args, reply)
 	// Completar con la llamada RPC correcta incluida
 	// Configura el host del nodo destino para la llamada RPC.
 	peer := nr.Nodos[nodo]
 	// Llamada RPC con timeout
 	err := peer.CallTimeout("NodoRaft.PedirVoto", args, reply, 200*time.Millisecond) // TODO: ajustar timeout
 	if err != nil {
-		log.Println("Error al enviar petición de voto:", err)
+		//log.Println("Error al enviar petición de voto:", err)
 		return false
 	}
+
+	fmt.Println(nodo, args, reply)
 	if !reply.VoteGranted {
-		log.Println("Voto denegado a ", nr.Yo, " desde ", nodo)
+		fmt.Println(nodo, " me denegò voto a mi, ", nr.Yo)
 		return false
 	}
+	fmt.Println(nodo, " me diò voto a mi, ", nr.Yo)
 	return true
 }
 
@@ -515,7 +548,7 @@ func (nr *NodoRaft) monitorizarTemporizadoresRaft() {
 	for {
 		select {
 		//In this case, leader hasn't sent a heartbeat in a while, so we start eection
-		case <-nr.timeoutEleccion.C: // Election timeout case
+		case <-nr.timeoutTimer.C: // Election timeout case
 			nr.mutex.Lock()
 			amLeader := nr.IdLider == nr.Yo
 			nr.mutex.Unlock()
@@ -525,13 +558,12 @@ func (nr *NodoRaft) monitorizarTemporizadoresRaft() {
 				nr.iniciarEleccion() // Start election
 			}
 
-		case <-nr.leaderHeartBeat.C: // Leader heartbeat case
+		case <-nr.leaderHeartBeatTicker.C: // Leader heartbeat case
 			nr.mutex.Lock()
 			amLeader := nr.IdLider == nr.Yo
 			nr.mutex.Unlock()
 
 			if amLeader { // If I am the leader
-				fmt.Println("Am leader")
 				nr.enviarLatidosATodos()
 			}
 		}
@@ -539,30 +571,34 @@ func (nr *NodoRaft) monitorizarTemporizadoresRaft() {
 }
 
 func (nr *NodoRaft) enviarLatidosATodos() {
+	args := HeartbeatArgs{
+		IdLeader: nr.Yo,
+		Mandato:  nr.mandatoActual,
+	}
 	for i := 0; i < len(nr.Nodos); i++ {
-		go func(nr *NodoRaft) {
-			for i := 0; i < len(nr.Nodos); i++ {
-				args := Vacio{}
-				reply := Vacio{}
-				err := nr.Nodos[i].CallTimeout("NodoRaft.Heartbeat", &args, &reply, 10*time.Millisecond)
+		go func(nr *NodoRaft, nodo int, args *HeartbeatArgs) {
+			reply := Vacio{}
+			if nodo != nr.Yo {
+				err := nr.Nodos[nodo].CallTimeout("NodoRaft.Heartbeat", args, &reply, 10*time.Millisecond)
 				if err != nil {
-					//Si el nodo falla nos da igual
+					//The node is down, we ignore
+					//fmt.Println("Error akì", err.Error())
 				}
 			}
-		}(nr)
+		}(nr, i, &args)
 	}
 }
 
 func (nr *NodoRaft) iniciarEleccion() {
 
-	nr.votedFor = nr.Yo // Se vota a sí mismo
-	//Preparar argumentos de peticion y repsuesta al voto
-
-	fmt.Println("Locking mutex ")
 	nr.mutex.Lock()
+	nr.timeoutTimer.Stop()
+
+	nr.State = Candidate
+	nr.votedFor = nr.Yo // Se vota a sí mismo
 	nr.mandatoActual++
 	peticion := ArgsPeticionVoto{
-		CandidateId:  nr.votedFor,
+		CandidateId:  nr.Yo,
 		Mandato:      nr.mandatoActual,
 		LastLogIndex: nr.lastApplied,
 	}
@@ -585,16 +621,18 @@ func (nr *NodoRaft) iniciarEleccion() {
 		}
 	}
 
-	electionEnd := time.NewTimer(2500 * time.Millisecond)
+	electionEnd := time.NewTimer(randomElectionTimeout())
 
 	//We voted for ourselves
 	grantedVotes := 1
 	for {
 		select {
 		case <-electionEnd.C:
+			fmt.Println("**Election ended**")
 			nr.mutex.Lock()
-			nr.timeoutEleccion.Reset(nr.timeoutTime)
+			nr.timeoutTimer.Reset(nr.timeoutTime)
 			nr.mutex.Unlock()
+			fmt.Println("**Election ended 2**")
 			return
 		case response := <-responses:
 			// do stuff. I'd call a function, for clarity:
@@ -611,7 +649,11 @@ func (nr *NodoRaft) iniciarEleccion() {
 }
 
 func (nr *NodoRaft) convertirEnLider() {
+	fmt.Println("I am the leader now")
+	nr.mutex.Lock()
+	nr.State = Leader
 	nr.IdLider = nr.Yo
-	nr.leaderHeartBeat = time.NewTicker(nr.heartbeatTime)
+	nr.leaderHeartBeatTicker = time.NewTicker(nr.heartbeatTime)
+	nr.mutex.Unlock()
 	// Inicializar nextIndex y matchIndex para el envío de registros?
 }
