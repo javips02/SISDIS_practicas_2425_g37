@@ -309,9 +309,9 @@ func (cfg *configDespliegue) pruebaUnLider(numreplicas int) int {
 
 func (cfg *configDespliegue) obtenerEstadoRemoto(
 	indiceNodo int) (int, int, bool, int) {
-	var reply raft.EstadoRemoto
+	var reply = raft.EstadoRemoto{IdNodo: 0, EstadoParcial: raft.EstadoParcial{}}
 	err := cfg.nodosRaft[indiceNodo].CallTimeout("NodoRaft.ObtenerEstadoNodo",
-		raft.Vacio{}, &reply, 10*time.Millisecond)
+		&raft.Vacio{}, &reply, 10*time.Millisecond)
 	check.CheckError(err, "Error en llamada RPC ObtenerEstadoRemoto")
 
 	return reply.IdNodo, reply.Mandato, reply.EsLider, reply.IdLider
