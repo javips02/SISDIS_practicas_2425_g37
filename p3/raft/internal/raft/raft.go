@@ -190,18 +190,6 @@ func NuevoNodo(nodos []rpctimeout.HostPort, yo int,
 		nr.matchIndex[i] = 0 // Ninguna entrada ha sido replicada aún
 	}
 
-	// Inicializacion de timers
-
-	nr.timeoutTime = randomElectionTimeout()
-	nr.heartbeatTime = heartbeatTimeout()
-
-	nr.Logger.Println("Election timeout: ", nr.timeoutTime, "ms")
-	nr.Logger.Println("Heartbeat interval: ", nr.timeoutTime, "ms")
-
-	nr.timeoutTimer = time.NewTimer(nr.timeoutTime)
-	nr.leaderHeartBeatTicker = time.NewTicker(nr.heartbeatTime)
-	nr.leaderHeartBeatTicker.Stop()
-	//So that channel is created at least
 
 	go nr.monitorizarTemporizadoresRaft() // monitorizar timeout eleccion y HB
 	//IdNodo, Mandato, EsLider, IdLider := nr.obtenerEstado()
@@ -213,7 +201,7 @@ func NuevoNodo(nodos []rpctimeout.HostPort, yo int,
 // limite sin lider dentor de cada nodo. Devuelve un tiempo aleatorio en ms
 // entre 200 y 400
 func randomElectionTimeout() time.Duration {
-	return time.Duration(800+rand.Intn(1000)) * time.Millisecond
+	return time.Duration(500+rand.Intn(600)) * time.Millisecond
 }
 
 func heartbeatTimeout() time.Duration {
@@ -259,7 +247,7 @@ func (nr *NodoRaft) obtenerEstado() (int, int, bool, int) {
 // No hay garantía que esta operación consiga comprometerse en una entrada de
 // de registro, dado que el lider puede fallar y la entrada ser reemplazada
 // en el futuro.
-// Resultado de este método :
+// Resultado de este method :
 // - Primer valor devuelto es el indice del registro donde se va a colocar
 // - la operacion si consigue comprometerse.
 // - El segundo valor es el mandato en curso
@@ -553,7 +541,24 @@ func (nr *NodoRaft) enviarPeticionVoto(nodo int, args *ArgsPeticionVoto,
 // --------------------------------------------------------------------------
 
 func (nr *NodoRaft) monitorizarTemporizadoresRaft() {
+<<<<<<< HEAD
 	nr.Logger.Println("Started monitorizar")
+=======
+	// Inicializacion de timers
+	time.Sleep(1 * time.Second)
+	nr.timeoutTime = randomElectionTimeout()
+	nr.heartbeatTime = heartbeatTimeout()
+
+	fmt.Println("Election timeout: ", nr.timeoutTime, "ms")
+	fmt.Println("Heartbeat interval: ", nr.timeoutTime, "ms")
+
+	nr.timeoutTimer = time.NewTimer(nr.timeoutTime)
+	nr.leaderHeartBeatTicker = time.NewTicker(nr.heartbeatTime)
+	nr.leaderHeartBeatTicker.Stop()
+	//So that channel is created at least
+
+	fmt.Println("Started monitorizar")
+>>>>>>> 0dd7bff0d1dbe510353e858737a20cec889e1353
 	for {
 		select {
 		//In this case, leader hasn't sent a heartbeat in a while, so we start eection
@@ -601,7 +606,7 @@ func (nr *NodoRaft) enviarLatidosATodos() {
 func (nr *NodoRaft) iniciarEleccion() {
 
 	nr.mutex.Lock()
-	nr.timeoutTimer.Stop()
+	//nr.timeoutTimer.Stop()
 	nr.State = Candidate
 	nr.votedFor = nr.Yo // Se vota a sí mismo
 	nr.mandatoActual++
