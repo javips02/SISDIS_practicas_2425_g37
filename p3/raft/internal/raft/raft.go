@@ -200,6 +200,8 @@ func NuevoNodo(nodos []rpctimeout.HostPort, yo int,
 	//So that channel is created at least
 
 	go nr.monitorizarTemporizadoresRaft() // monitorizar timeout eleccion y HB
+	//IdNodo, Mandato, EsLider, IdLider := nr.obtenerEstado()
+	fmt.Println(nr.obtenerEstado())
 	return nr
 }
 
@@ -231,8 +233,6 @@ func (nr *NodoRaft) para() {
 // Cuarto valor es el lider, es el indice del líder si no es él
 func (nr *NodoRaft) obtenerEstado() (int, int, bool, int) {
 
-	fmt.Println("Llamado obtener estado")
-	fmt.Println("Locking mutex ")
 	nr.mutex.Lock()
 	var yo int = nr.Yo
 	esLider := nr.IdLider == nr.Yo
@@ -407,6 +407,7 @@ func (nr *NodoRaft) Heartbeat(args *HeartbeatArgs,
 	if nr.mandatoActual < args.Mandato {
 		nr.mandatoActual = args.Mandato
 		nr.IdLider = args.IdLeader
+		fmt.Println("Tocado leader")
 		nr.State = Follower
 	}
 	nr.mutex.Unlock()
@@ -653,6 +654,7 @@ func (nr *NodoRaft) convertirEnLider() {
 	nr.mutex.Lock()
 	nr.State = Leader
 	nr.IdLider = nr.Yo
+	fmt.Println("Tocado leader")
 	nr.leaderHeartBeatTicker = time.NewTicker(nr.heartbeatTime)
 	nr.mutex.Unlock()
 	// Inicializar nextIndex y matchIndex para el envío de registros?
