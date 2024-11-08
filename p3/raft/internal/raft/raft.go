@@ -80,7 +80,6 @@ type AplicaOperacion struct {
 // Tipo de dato Go que representa un solo nodo (réplica) de raft
 type NodoRaft struct {
 	mutex sync.Mutex // Mutex para proteger acceso a estado compartido
-
 	// Host:Port de todos los nodos (réplicas) Raft, en mismo orden
 	Nodos   []rpctimeout.HostPort
 	Yo      int // indice de este nodos en campo array "nodos"
@@ -117,6 +116,8 @@ type NodoRaft struct {
 	leaderHeartBeatTicker *time.Ticker //tiempo restante para dar un nuevo latido
 }
 
+var barrera sync.WaitGroup
+
 // Creacion de un nuevo nodo de eleccion
 //
 // Tabla de <Direccion IP:puerto> de cada nodo incluido a si mismo.
@@ -139,6 +140,7 @@ func NuevoNodo(nodos []rpctimeout.HostPort, yo int,
 	nr.mandatoActual = 0
 	nr.IdLider = -1
 	nr.State = Follower
+	barrera.Add(1)
 
 	if kEnableDebugLogs {
 		nombreNodo := nodos[yo].Host() + "_" + nodos[yo].Port()
@@ -209,7 +211,7 @@ func NuevoNodo(nodos []rpctimeout.HostPort, yo int,
 // limite sin lider dentor de cada nodo. Devuelve un tiempo aleatorio en ms
 // entre 200 y 400
 func randomElectionTimeout() time.Duration {
-	return time.Duration(200+rand.Intn(200)) * time.Millisecond
+	return time.Duration(800+rand.Intn(1000)) * time.Millisecond
 }
 
 func heartbeatTimeout() time.Duration {
@@ -234,7 +236,7 @@ func (nr *NodoRaft) para() {
 func (nr *NodoRaft) obtenerEstado() (int, int, bool, int) {
 
 	nr.mutex.Lock()
-	var yo int = nr.Yo
+	var yo = nr.Yo
 	esLider := nr.IdLider == nr.Yo
 	idLider := nr.IdLider
 	mandato := 0
@@ -267,7 +269,7 @@ func (nr *NodoRaft) someterOperacion(operacion Operacion) (int, int,
 	fmt.Println("Locking mutex ")
 	nr.mutex.Lock()
 	indice := nr.commitIndex
-	mandato := -1 //TODO: cambiar en la siguiente práctica
+	mandato := 0 //TODO: cambiar en la siguiente práctica
 	EsLider := nr.IdLider == nr.Yo
 	idLider := nr.IdLider
 	nr.mutex.Unlock()
@@ -594,7 +596,6 @@ func (nr *NodoRaft) iniciarEleccion() {
 
 	nr.mutex.Lock()
 	nr.timeoutTimer.Stop()
-
 	nr.State = Candidate
 	nr.votedFor = nr.Yo // Se vota a sí mismo
 	nr.mandatoActual++
