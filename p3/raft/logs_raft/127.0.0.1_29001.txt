@@ -1,1 +1,9 @@
-127.0.0.1_29001 -> 17:31:20.938639 raft.go:165: logger initialized
+127.0.0.1_29001 -> 18:00:32.070603 raft.go:169: logger initialized
+127.0.0.1_29001 -> 18:00:32.070760 raft.go:198: Election timeout:  1.618s ms
+127.0.0.1_29001 -> 18:00:32.070812 raft.go:199: Heartbeat interval:  1.618s ms
+127.0.0.1_29001 -> 18:00:32.070880 raft.go:208: 0 0 false -1
+127.0.0.1_29001 -> 18:00:32.071109 raft.go:556: Started monitorizar
+127.0.0.1_29001 -> 18:00:33.689586 raft.go:566: Election!
+127.0.0.1_29001 -> 18:00:33.689648 raft.go:615: Starting election for mandate 1
+127.0.0.1_29001 -> 18:00:35.007374 raft.go:639: **Election ended**
+127.0.0.1_29001 -> 18:00:35.007453 raft.go:643: **Election ended 2**
