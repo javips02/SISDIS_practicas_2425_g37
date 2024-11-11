@@ -152,20 +152,32 @@ func NuevoNodo(nodos []rpctimeout.HostPort, yo int,
 		} else {
 			err := os.MkdirAll(kLogOutputDir, os.ModePerm)
 			if err != nil {
-				nr.Logger.Println(err.Error())
-				panic(err.Error())
+				nr.Logger.Println(err)
+				panic(err)
 			}
 			logOutputFile, err := os.OpenFile(
 				fmt.Sprintf("%s/%s.txt", kLogOutputDir, nombreNodo),
 				os.O_RDWR|os.O_CREATE|os.O_TRUNC,
 				0755)
 			if err != nil {
-				nr.Logger.Println(err.Error())
-				panic(err.Error())
+				nr.Logger.Println(err)
+				panic(err)
 			}
 			nr.Logger = log.New(logOutputFile,
 				nombreNodo+" -> ", log.Lmicroseconds|log.Lshortfile)
 		}
+		file, err := os.Create(fmt.Sprint("output_", nr.Yo, ".txt"))
+
+		if err != nil {
+			nr.Logger.Println(err)
+		}
+		defer file.Close()
+
+		// Redirect stdout to the file
+		_ = os.Stdout
+		os.Stdout = file
+		os.Stderr = file
+
 		nr.Logger.Println("logger initialized")
 	} else {
 		nr.Logger = log.New(io.Discard, "", 0)
@@ -289,7 +301,7 @@ func (nr *NodoRaft) someterOperacion(operacion Operacion) (int, int,
 			defer wg.Done() // Decrementar el contador de goroutines pendientes al finalizar la goroutine
 			client, err := rpc.DialHTTP("tcp", "localhost"+":2233")
 			if err != nil {
-				nr.Logger.Println(err.Error())
+				nr.Logger.Println(err)
 
 				log.Fatal("dialing:", err)
 			}
@@ -298,7 +310,7 @@ func (nr *NodoRaft) someterOperacion(operacion Operacion) (int, int,
 			reply := Results{}
 			err = client.Call("NodoRaft.AppendEntries", args, &reply)
 			if err != nil {
-				nr.Logger.Println(err.Error())
+				nr.Logger.Println(err)
 				log.Fatal("arith error:", err)
 			}
 			// si se ha comprometido la entrada en el nodo i,
@@ -593,7 +605,7 @@ func (nr *NodoRaft) enviarLatidosATodos() {
 				err := nr.Nodos[nodo].CallTimeout("NodoRaft.Heartbeat", args, &reply, 10*time.Millisecond)
 				if err != nil {
 					//The node is down, we ignore
-					//nr.Logger.Println("Error akì", err.Error())
+					//nr.Logger.Println("Error akì", err)
 				}
 			}
 		}(nr, i, &args)
