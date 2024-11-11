@@ -44,3 +44,4 @@ go.sum
 /p2/cmd/logs/*
 */logs_raft/*
 piCompile.sh
+output_*.txt
