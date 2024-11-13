@@ -140,12 +140,11 @@ func NuevoNodo(nodos []rpctimeout.HostPort, yo int,
 	nr.mandatoActual = 0
 	nr.IdLider = -1
 	nr.State = Follower
-	barrera.Add(1)
+	//barrera.Add(1)
 
 	if kEnableDebugLogs {
 		nombreNodo := nodos[yo].Host() + "_" + nodos[yo].Port()
-		fmt.Println("nombreNodo: ", nombreNodo)
-
+		log.Print("nombreNodo: ", nombreNodo)
 		if kLogToStdout {
 			nr.Logger = log.New(os.Stdout, nombreNodo+" -->> ",
 				log.Lmicroseconds|log.Lshortfile)
@@ -188,22 +187,19 @@ func NuevoNodo(nodos []rpctimeout.HostPort, yo int,
 		nr.matchIndex[i] = 0 // Ninguna entrada ha sido replicada aún
 	}
 
-	// Inicializacion de timers
-
 	nr.timeoutTime = randomElectionTimeout()
 	nr.heartbeatTime = heartbeatTimeout()
 
-	fmt.Println("Election timeout: ", nr.timeoutTime, "ms")
-	fmt.Println("Heartbeat interval: ", nr.timeoutTime, "ms")
+	nr.Logger.Println("Election timeout: ", nr.timeoutTime, "ms")
+	nr.Logger.Println("Heartbeat interval: ", nr.heartbeatTime, "ms")
 
 	nr.timeoutTimer = time.NewTimer(nr.timeoutTime)
 	nr.leaderHeartBeatTicker = time.NewTicker(nr.heartbeatTime)
 	nr.leaderHeartBeatTicker.Stop()
-	//So that channel is created at least
 
 	go nr.monitorizarTemporizadoresRaft() // monitorizar timeout eleccion y HB
 	//IdNodo, Mandato, EsLider, IdLider := nr.obtenerEstado()
-	fmt.Println(nr.obtenerEstado())
+	nr.Logger.Println(nr.obtenerEstado())
 	return nr
 }
 
@@ -211,7 +207,7 @@ func NuevoNodo(nodos []rpctimeout.HostPort, yo int,
 // limite sin lider dentor de cada nodo. Devuelve un tiempo aleatorio en ms
 // entre 200 y 400
 func randomElectionTimeout() time.Duration {
-	return time.Duration(800+rand.Intn(1000)) * time.Millisecond
+	return time.Duration(800+rand.Intn(1500)) * time.Millisecond
 }
 
 func heartbeatTimeout() time.Duration {
@@ -266,7 +262,7 @@ func (nr *NodoRaft) obtenerEstado() (int, int, bool, int) {
 // - Quinto valor es el resultado de aplicar esta operación en máquina de estados
 func (nr *NodoRaft) someterOperacion(operacion Operacion) (int, int,
 	bool, int, string) {
-	fmt.Println("Locking mutex ")
+
 	nr.mutex.Lock()
 	indice := nr.commitIndex
 	mandato := 0 //TODO: cambiar en la siguiente práctica
@@ -282,7 +278,7 @@ func (nr *NodoRaft) someterOperacion(operacion Operacion) (int, int,
 		return indice, mandato, EsLider, idLider, valorADevolver
 	}
 
-	fmt.Println(operacion)
+	nr.Logger.Println(operacion)
 	// Definir la operación a someter
 	entrada := Entry{
 		op: operacion, // Aquí `operacion` es el parámetro que recibes en `someterOperacion`
@@ -312,7 +308,7 @@ func (nr *NodoRaft) someterOperacion(operacion Operacion) (int, int,
 			// si se ha comprometido la entrada en el nodo i,
 			// aumentar el contador de forma atómica
 			if reply.success {
-				fmt.Println("Locking mutex ")
+
 				nr.mutex.Lock()
 				*comprometidos++
 				nr.mutex.Unlock()
@@ -376,8 +372,6 @@ func (nr *NodoRaft) SometerOperacionRaft(operacion *Operacion,
 // -----------------------------------------------------------------------
 // LLAMADAS RPC protocolo RAFT
 //
-// Structura de ejemplo de argumentos de RPC PedirVoto.
-//
 // Recordar
 // -----------
 // Nombres de campos deben comenzar con letra mayuscula !
@@ -389,8 +383,6 @@ type ArgsPeticionVoto struct {
 	//lastLogTerm int (para pr4)
 }
 
-// Structura de ejemplo de respuesta de RPC PedirVoto,
-//
 // Recordar
 // -----------
 // Nombres de campos deben comenzar con letra mayuscula !
@@ -403,16 +395,16 @@ type RespuestaPeticionVoto struct {
 // Reset heartbeat counter
 func (nr *NodoRaft) Heartbeat(args *HeartbeatArgs,
 	output *Vacio) error {
-	fmt.Println("PUM")
+	nr.Logger.Println("PUM")
 	nr.timeoutTimer.Reset(nr.timeoutTime)
 	nr.mutex.Lock()
 	if nr.mandatoActual < args.Mandato {
 		nr.mandatoActual = args.Mandato
 		nr.IdLider = args.IdLeader
-		fmt.Println("Tocado leader")
 		nr.State = Follower
 	}
 	nr.mutex.Unlock()
+
 	return nil
 }
 
@@ -421,28 +413,33 @@ func (nr *NodoRaft) PedirVoto(peticion *ArgsPeticionVoto,
 	reply *RespuestaPeticionVoto) error {
 
 	nr.mutex.Lock()
+
 	//A process remains a follower as long as he gets RPCs from leaders or candidates
 	nr.timeoutTimer.Reset(nr.timeoutTime)
 	if peticion.Mandato > nr.mandatoActual {
 		nr.mandatoActual = peticion.Mandato
 		nr.votedFor = -1
+		nr.State = Follower
 	}
 
-	fmt.Print("Got PedirVoto by ", peticion.CandidateId)
+	nr.Logger.Print("Mandate ", peticion.Mandato, "got PedirVoto by ", peticion.CandidateId)
 	if nr.votedFor == -1 {
 		nr.votedFor = peticion.CandidateId
 		reply.VoteGranted = true
 	} else {
 		reply.VoteGranted = false
 	}
+
 	nr.mutex.Unlock()
 
 	if reply.VoteGranted {
-		fmt.Print("Granted vote request to ", peticion.CandidateId)
+		nr.Logger.Print("Granted vote request to ", peticion.CandidateId)
 	} else {
-		fmt.Print("Denied vote request to ", peticion.CandidateId)
+		nr.Logger.Print("Denied vote request to ", peticion.CandidateId)
 	}
-	fmt.Println(", voted for: ", nr.votedFor)
+	nr.Logger.Println("Mandate ", peticion.Mandato, " voted for: ", nr.votedFor)
+
+	//TODO: Devolver mandato?
 
 	return nil
 }
@@ -476,7 +473,7 @@ func (nr *NodoRaft) AppendEntries(args *ArgAppendEntries,
 	//if newEntry.index == otherEntry.index && termNew != termOther --> reply false
 
 	//Append any new entries not already in the log
-	fmt.Println("Locking mutex ")
+
 	nr.mutex.Lock()
 	for key, value := range args.Entries {
 		nr.Entries[strconv.Itoa(key)] = value.op.Operacion //meter el comando con su índice
@@ -533,12 +530,12 @@ func (nr *NodoRaft) enviarPeticionVoto(nodo int, args *ArgsPeticionVoto,
 		return false
 	}
 
-	fmt.Println(nodo, args, reply)
+	nr.Logger.Println(nodo, args, reply)
 	if !reply.VoteGranted {
-		fmt.Println(nodo, " me denegò voto a mi, ", nr.Yo)
+		nr.Logger.Println(nodo, " me denegò voto a mi, ", nr.Yo)
 		return false
 	}
-	fmt.Println(nodo, " me diò voto a mi, ", nr.Yo)
+	nr.Logger.Println(nodo, " me diò voto a mi, ", nr.Yo)
 	return true
 }
 
@@ -547,7 +544,7 @@ func (nr *NodoRaft) enviarPeticionVoto(nodo int, args *ArgsPeticionVoto,
 // --------------------------------------------------------------------------
 
 func (nr *NodoRaft) monitorizarTemporizadoresRaft() {
-	fmt.Println("Started monitorizar")
+
 	for {
 		select {
 		//In this case, leader hasn't sent a heartbeat in a while, so we start eection
@@ -557,7 +554,7 @@ func (nr *NodoRaft) monitorizarTemporizadoresRaft() {
 			nr.mutex.Unlock()
 
 			if !amLeader { // If I'm not the leader
-				fmt.Println("Election!")
+				nr.Logger.Println("Election!")
 				nr.iniciarEleccion() // Start election
 			}
 
@@ -585,7 +582,7 @@ func (nr *NodoRaft) enviarLatidosATodos() {
 				err := nr.Nodos[nodo].CallTimeout("NodoRaft.Heartbeat", args, &reply, 10*time.Millisecond)
 				if err != nil {
 					//The node is down, we ignore
-					//fmt.Println("Error akì", err.Error())
+					//nr.Logger.Println("Error akì", err.Error())
 				}
 			}
 		}(nr, i, &args)
@@ -606,7 +603,7 @@ func (nr *NodoRaft) iniciarEleccion() {
 	}
 	nr.mutex.Unlock()
 
-	fmt.Printf("Starting election for mandate %d\n", nr.mandatoActual)
+	nr.Logger.Printf("Starting election for mandate %d\n", nr.mandatoActual)
 
 	// Lanza una goroutine para cada nodo excepto el propio
 	responses := make(chan RespuestaPeticionVoto) // Canal respuestas RPC
@@ -630,11 +627,11 @@ func (nr *NodoRaft) iniciarEleccion() {
 	for {
 		select {
 		case <-electionEnd.C:
-			fmt.Println("**Election ended**")
+			nr.Logger.Println("**Election ended**")
 			nr.mutex.Lock()
 			nr.timeoutTimer.Reset(nr.timeoutTime)
 			nr.mutex.Unlock()
-			fmt.Println("**Election ended 2**")
+			nr.Logger.Println("**Election ended 2**")
 			return
 		case response := <-responses:
 			// do stuff. I'd call a function, for clarity:
@@ -646,16 +643,17 @@ func (nr *NodoRaft) iniciarEleccion() {
 					return
 				}
 			}
+			//TODO:
+			//case si recibo pedirElecion con mandato mas alto?
 		}
 	}
 }
 
 func (nr *NodoRaft) convertirEnLider() {
-	fmt.Println("I am the leader now")
+	nr.Logger.Println("I am the leader now")
 	nr.mutex.Lock()
 	nr.State = Leader
 	nr.IdLider = nr.Yo
-	fmt.Println("Tocado leader")
 	nr.leaderHeartBeatTicker = time.NewTicker(nr.heartbeatTime)
 	nr.mutex.Unlock()
 	// Inicializar nextIndex y matchIndex para el envío de registros?
