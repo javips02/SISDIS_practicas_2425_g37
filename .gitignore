@@ -42,6 +42,7 @@ go.sum
 *.bak
 
 /p2/cmd/logs/*
+*/logs_raft/*
 piCompile.sh
 /p3/raft/logs_raft/*
 output_*.txt

@@ -144,25 +144,40 @@ func NuevoNodo(nodos []rpctimeout.HostPort, yo int,
 
 	if kEnableDebugLogs {
 		nombreNodo := nodos[yo].Host() + "_" + nodos[yo].Port()
-		log.Print("nombreNodo: ", nombreNodo)
+		log.Println("nombreNodo: ", nombreNodo)
+
 		if kLogToStdout {
 			nr.Logger = log.New(os.Stdout, nombreNodo+" -->> ",
 				log.Lmicroseconds|log.Lshortfile)
 		} else {
 			err := os.MkdirAll(kLogOutputDir, os.ModePerm)
 			if err != nil {
-				panic(err.Error())
+				nr.Logger.Println(err)
+				panic(err)
 			}
 			logOutputFile, err := os.OpenFile(
 				fmt.Sprintf("%s/%s.txt", kLogOutputDir, nombreNodo),
 				os.O_RDWR|os.O_CREATE|os.O_TRUNC,
 				0755)
 			if err != nil {
-				panic(err.Error())
+				nr.Logger.Println(err)
+				panic(err)
 			}
 			nr.Logger = log.New(logOutputFile,
 				nombreNodo+" -> ", log.Lmicroseconds|log.Lshortfile)
 		}
+		file, err := os.Create(fmt.Sprint("output_", nr.Yo, ".txt"))
+
+		if err != nil {
+			nr.Logger.Println(err)
+		}
+		defer file.Close()
+
+		// Redirect stdout to the file
+		_ = os.Stdout
+		os.Stdout = file
+		os.Stderr = file
+
 		nr.Logger.Println("logger initialized")
 	} else {
 		nr.Logger = log.New(io.Discard, "", 0)
@@ -253,7 +268,7 @@ func (nr *NodoRaft) obtenerEstado() (int, int, bool, int) {
 // No hay garantía que esta operación consiga comprometerse en una entrada de
 // de registro, dado que el lider puede fallar y la entrada ser reemplazada
 // en el futuro.
-// Resultado de este método :
+// Resultado de este method :
 // - Primer valor devuelto es el indice del registro donde se va a colocar
 // - la operacion si consigue comprometerse.
 // - El segundo valor es el mandato en curso
@@ -296,6 +311,8 @@ func (nr *NodoRaft) someterOperacion(operacion Operacion) (int, int,
 			defer wg.Done() // Decrementar el contador de goroutines pendientes al finalizar la goroutine
 			client, err := rpc.DialHTTP("tcp", "localhost"+":2233")
 			if err != nil {
+				nr.Logger.Println(err)
+
 				log.Fatal("dialing:", err)
 			}
 			//TODO: debería meter todas las entradas que no están sincronizadas con un bucle?
@@ -303,6 +320,7 @@ func (nr *NodoRaft) someterOperacion(operacion Operacion) (int, int,
 			reply := Results{}
 			err = client.Call("NodoRaft.AppendEntries", args, &reply)
 			if err != nil {
+				nr.Logger.Println(err)
 				log.Fatal("arith error:", err)
 			}
 			// si se ha comprometido la entrada en el nodo i,
@@ -353,6 +371,7 @@ type EstadoRemoto struct {
 
 func (nr *NodoRaft) ObtenerEstadoNodo(args Vacio, reply *EstadoRemoto) error {
 	reply.IdNodo, reply.Mandato, reply.EsLider, reply.IdLider = nr.obtenerEstado()
+	nr.Logger.Println(nr.obtenerEstado())
 	return nil
 }
 
@@ -526,7 +545,7 @@ func (nr *NodoRaft) enviarPeticionVoto(nodo int, args *ArgsPeticionVoto,
 	// Llamada RPC con timeout
 	err := peer.CallTimeout("NodoRaft.PedirVoto", args, reply, 200*time.Millisecond) // TODO: ajustar timeout
 	if err != nil {
-		//log.Println("Error al enviar petición de voto:", err)
+		//nr.Logger.Println("Error al enviar petición de voto:", err)
 		return false
 	}
 
@@ -582,7 +601,6 @@ func (nr *NodoRaft) enviarLatidosATodos() {
 				err := nr.Nodos[nodo].CallTimeout("NodoRaft.Heartbeat", args, &reply, 10*time.Millisecond)
 				if err != nil {
 					//The node is down, we ignore
-					//nr.Logger.Println("Error akì", err.Error())
 				}
 			}
 		}(nr, i, &args)
@@ -592,7 +610,7 @@ func (nr *NodoRaft) enviarLatidosATodos() {
 func (nr *NodoRaft) iniciarEleccion() {
 
 	nr.mutex.Lock()
-	nr.timeoutTimer.Stop()
+	//nr.timeoutTimer.Stop()
 	nr.State = Candidate
 	nr.votedFor = nr.Yo // Se vota a sí mismo
 	nr.mandatoActual++
