@@ -214,7 +214,7 @@ func NuevoNodo(nodos []rpctimeout.HostPort, yo int,
 
 	go nr.monitorizarTemporizadoresRaft() // monitorizar timeout eleccion y HB
 	//IdNodo, Mandato, EsLider, IdLider := nr.obtenerEstado()
-	nr.Logger.Println(nr.obtenerEstado())
+	//nr.Logger.Println(nr.obtenerEstado())
 	return nr
 }
 
@@ -371,7 +371,7 @@ type EstadoRemoto struct {
 
 func (nr *NodoRaft) ObtenerEstadoNodo(args Vacio, reply *EstadoRemoto) error {
 	reply.IdNodo, reply.Mandato, reply.EsLider, reply.IdLider = nr.obtenerEstado()
-	nr.Logger.Println(nr.obtenerEstado())
+	//nr.Logger.Println(nr.obtenerEstado())
 	return nil
 }
 
@@ -407,20 +407,18 @@ type ArgsPeticionVoto struct {
 // Nombres de campos deben comenzar con letra mayuscula !
 type RespuestaPeticionVoto struct {
 	// Vuestros datos aqui
-	// mandato ...
 	VoteGranted bool
+	Mandate     int
 }
 
 // Reset heartbeat counter
 func (nr *NodoRaft) Heartbeat(args *HeartbeatArgs,
 	output *Vacio) error {
-	nr.Logger.Println("PUM")
+	//nr.Logger.Println("Latido desde ", args.IdLeader, " mandato ", args.Mandato)
 	nr.timeoutTimer.Reset(nr.timeoutTime)
 	nr.mutex.Lock()
 	if nr.mandatoActual < args.Mandato {
-		nr.mandatoActual = args.Mandato
-		nr.IdLider = args.IdLeader
-		nr.State = Follower
+		nr.convertirEnFollower(args.Mandato, args.IdLeader)
 	}
 	nr.mutex.Unlock()
 
@@ -448,7 +446,7 @@ func (nr *NodoRaft) PedirVoto(peticion *ArgsPeticionVoto,
 	} else {
 		reply.VoteGranted = false
 	}
-
+	reply.Mandate = nr.mandatoActual
 	nr.mutex.Unlock()
 
 	if reply.VoteGranted {
@@ -549,7 +547,7 @@ func (nr *NodoRaft) enviarPeticionVoto(nodo int, args *ArgsPeticionVoto,
 		return false
 	}
 
-	nr.Logger.Println(nodo, args, reply)
+	//nr.Logger.Println(nodo, args, reply)
 	if !reply.VoteGranted {
 		nr.Logger.Println(nodo, " me denegò voto a mi, ", nr.Yo)
 		return false
@@ -568,23 +566,12 @@ func (nr *NodoRaft) monitorizarTemporizadoresRaft() {
 		select {
 		//In this case, leader hasn't sent a heartbeat in a while, so we start eection
 		case <-nr.timeoutTimer.C: // Election timeout case
-			nr.mutex.Lock()
-			amLeader := nr.IdLider == nr.Yo
-			nr.mutex.Unlock()
-
-			if !amLeader { // If I'm not the leader
-				nr.Logger.Println("Election!")
-				nr.iniciarEleccion() // Start election
-			}
+			nr.Logger.Println("Election!")
+			nr.iniciarEleccion() // Start election
 
 		case <-nr.leaderHeartBeatTicker.C: // Leader heartbeat case
-			nr.mutex.Lock()
-			amLeader := nr.IdLider == nr.Yo
-			nr.mutex.Unlock()
-
-			if amLeader { // If I am the leader
-				nr.enviarLatidosATodos()
-			}
+			//nr.Logger.Println("PUM!")
+			go nr.enviarLatidosATodos()
 		}
 	}
 }
@@ -600,7 +587,7 @@ func (nr *NodoRaft) enviarLatidosATodos() {
 			if nodo != nr.Yo {
 				err := nr.Nodos[nodo].CallTimeout("NodoRaft.Heartbeat", args, &reply, 10*time.Millisecond)
 				if err != nil {
-					//The node is down, we ignore
+					nr.Logger.Println("Failed to send beat to ", nodo)
 				}
 			}
 		}(nr, i, &args)
@@ -645,21 +632,23 @@ func (nr *NodoRaft) iniciarEleccion() {
 	for {
 		select {
 		case <-electionEnd.C:
-			nr.Logger.Println("**Election ended**")
 			nr.mutex.Lock()
 			nr.timeoutTimer.Reset(nr.timeoutTime)
+			nr.Logger.Println("**Election ended for mandate **", nr.mandatoActual)
 			nr.mutex.Unlock()
-			nr.Logger.Println("**Election ended 2**")
 			return
 		case response := <-responses:
 			// do stuff. I'd call a function, for clarity:
-			if response.VoteGranted {
+			nr.mutex.Lock()
+			if response.VoteGranted && response.Mandate == nr.mandatoActual {
+				nr.mutex.Unlock()
 				grantedVotes++
 				if grantedVotes > len(nr.Nodos)/2 {
-					close(responses)
-					nr.convertirEnLider()
+					nr.convertirEnLeader()
 					return
 				}
+			} else {
+				nr.mutex.Unlock()
 			}
 			//TODO:
 			//case si recibo pedirElecion con mandato mas alto?
@@ -667,12 +656,23 @@ func (nr *NodoRaft) iniciarEleccion() {
 	}
 }
 
-func (nr *NodoRaft) convertirEnLider() {
+func (nr *NodoRaft) convertirEnLeader() {
 	nr.Logger.Println("I am the leader now")
 	nr.mutex.Lock()
+	nr.Logger.Println("Toy akì")
 	nr.State = Leader
 	nr.IdLider = nr.Yo
-	nr.leaderHeartBeatTicker = time.NewTicker(nr.heartbeatTime)
+	nr.leaderHeartBeatTicker.Reset(nr.heartbeatTime)
+	nr.Logger.Println("IdLeader: ", nr.IdLider)
 	nr.mutex.Unlock()
 	// Inicializar nextIndex y matchIndex para el envío de registros?
+}
+
+// TO BE CALLED ONLY WITH MUTEX CONTROL
+func (nr *NodoRaft) convertirEnFollower(mandate int, leader int) {
+	//DON'T LOCK, FUNCTION MUST BE CALLED WITH MUTEX CONTROL
+	nr.State = Follower
+	nr.IdLider = leader
+	nr.mandatoActual = mandate
+	nr.leaderHeartBeatTicker.Stop()
 }
