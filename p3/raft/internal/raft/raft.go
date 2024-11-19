@@ -27,7 +27,6 @@ import (
 	"io"
 	"log"
 	"math/rand"
-	"net/rpc"
 	"os"
 	"strconv"
 
@@ -297,52 +296,56 @@ func (nr *NodoRaft) someterOperacion(operacion Operacion) (int, int,
 	// Definir la operación a someter
 	entrada := Entry{
 		op: operacion, // Aquí `operacion` es el parámetro que recibes en `someterOperacion`
-
 	}
 
-	var comprometidos int = 0
-	//barrera:
-	var wg sync.WaitGroup // WaitGroup para esperar a que todas las goroutines terminen
+	repliesChan := make(chan ReplyAppendEntries, len(nr.Nodos))
 
-	for i := 0; i < len(nr.Nodos); i++ {
-		wg.Add(1) // Incrementar el contador de goroutines pendientes
-
-		go func(peer rpctimeout.HostPort, nr *NodoRaft, comprometidos *int) {
-			defer wg.Done() // Decrementar el contador de goroutines pendientes al finalizar la goroutine
-			client, err := rpc.DialHTTP("tcp", "localhost"+":2233")
-			if err != nil {
-				nr.Logger.Println(err)
-
-				log.Fatal("dialing:", err)
-			}
-			//TODO: debería meter todas las entradas que no están sincronizadas con un bucle?
-			args := ArgAppendEntries{Entries: []Entry{entrada}} //meter entrada/s para comprometer
-			reply := Results{}
-			err = client.Call("NodoRaft.AppendEntries", args, &reply)
-			if err != nil {
-				nr.Logger.Println(err)
-				log.Fatal("arith error:", err)
-			}
-			// si se ha comprometido la entrada en el nodo i,
-			// aumentar el contador de forma atómica
-			if reply.success {
-
-				nr.mutex.Lock()
-				*comprometidos++
-				nr.mutex.Unlock()
-			}
-		}(nr.Nodos[i], nr, &comprometidos)
+	for i := range nr.Nodos {
+		if i != nr.Yo {
+			go func(nodo int, args ArgAppendEntries, repliesChan chan ReplyAppendEntries) {
+				peer := nr.Nodos[nodo]
+				reply := ReplyAppendEntries{
+					Node:    nodo,
+					Success: false,
+				}
+				// Llamada RPC con timeout
+				err := peer.CallTimeout("NodoRaft.AppendEntry", &args, &reply, 20*time.Millisecond) // TODO: ajustar timeout
+				if err != nil {
+					repliesChan <- ReplyAppendEntries{
+						Node:    nodo,
+						Success: false,
+					}
+				} else {
+					repliesChan <- reply
+				}
+			}(i, args, repliesChan)
+		}
 	}
-	// esperar a que todos los subprocesos alcancen la barrera
-	// claro, no tengo que esperar a todos... apañar esto TODO
-	wg.Wait()
+	/*
+		for i := 0; i < len(nr.Nodos); i++ {
+			wg.Add(1) // Incrementar el contador de goroutines pendientes
 
-	//caso de exito al comprometer la entrada
-	if comprometidos >= len(nr.Nodos)/2 {
-		valorADevolver = operacion.Operacion
-	} else {
-		valorADevolver = "false"
-	}
+			go func(peer rpctimeout.HostPort, nr *NodoRaft, comprometidos *int) {
+
+				//TODO: debería meter todas las entradas que no están sincronizadas con un bucle?
+				args := ArgAppendEntries{Entries: []Entry{entrada}} //meter entrada/s para comprometer
+				reply := Results{}
+				err = client.Call("NodoRaft.AppendEntries", args, &reply)
+				if err != nil {
+					nr.Logger.Println(err)
+					log.Fatal("arith error:", err)
+				}
+				// si se ha comprometido la entrada en el nodo i,
+				// aumentar el contador de forma atómica
+				if reply.success {
+
+					nr.mutex.Lock()
+					*comprometidos++
+					nr.mutex.Unlock()
+				}
+			}(nr.Nodos[i], nr, &comprometidos)
+		}
+	*/
 
 	return indice, mandato, EsLider, idLider, valorADevolver
 }
@@ -469,6 +472,11 @@ type ArgAppendEntries struct {
 	Entries      []Entry
 	LeaderCommit int // index del commit para el vector del líder
 	// añadir term, leadirId, precLogIndex, prevLogTerm si necesario
+}
+
+type ReplyAppendEntries struct {
+	Node    int
+	Success bool
 }
 
 type HeartbeatArgs struct {

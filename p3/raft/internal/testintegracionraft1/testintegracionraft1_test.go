@@ -194,7 +194,7 @@ func (cfg *configDespliegue) falloAnteriorElegirNuevoLiderTest3(t *testing.T) {
 
 // 3 operaciones comprometidas con situacion estable y sin fallos - 3 NODOS RAFT
 func (cfg *configDespliegue) tresOperacionesComprometidasEstable(t *testing.T) {
-	t.Skip("SKIPPED FalloAnteriorElegirNuevoLiderTest3")
+	//t.Skip("SKIPPED FalloAnteriorElegirNuevoLiderTest3")
 
 	defer cfg.stopDistributedProcesses() //parametros
 
@@ -202,18 +202,11 @@ func (cfg *configDespliegue) tresOperacionesComprometidasEstable(t *testing.T) {
 
 	cfg.startDistributedProcesses()
 
-	fmt.Printf("Lider inicial\n")
-	cfg.pruebaUnLider(3)
-
-	_, _, _, idLider := cfg.obtenerEstadoRemoto(0)
-
-	var reply raft.Vacio
+	idLider := cfg.pruebaUnLider(3)
+	fmt.Printf("Lider inicial es %d\n", idLider)
 
 	var someterReply bool
 
-	err := cfg.nodosRaft[idLider].CallTimeout("NodoRaft.ParaNodo",
-		raft.Vacio{}, &reply, 10*time.Millisecond)
-	check.CheckError(err, "Error al parar primero leader")
 	op1 := raft.Operacion{
 		Operacion: "write",
 		Clave:     "hola-it",
@@ -233,7 +226,7 @@ func (cfg *configDespliegue) tresOperacionesComprometidasEstable(t *testing.T) {
 		Clave:     "hola-it",
 	}
 
-	err = cfg.nodosRaft[idLider].CallTimeout("NodoRaft.SometerOperacionRaft",
+	err := cfg.nodosRaft[idLider].CallTimeout("NodoRaft.SometerOperacionRaft",
 		&op1, &someterReply, 10*time.Millisecond)
 	check.CheckError(err, "Error al someter operaciòn 1")
 	if !(someterReply) {
