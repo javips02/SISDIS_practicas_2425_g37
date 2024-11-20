@@ -526,7 +526,8 @@ func (nr *NodoRaft) AppendEntries(args *ArgsAppendEntries,
 	for _, value := range args.Entries {
 		nr.lastApplied++
 		nr.Logs[nr.lastApplied] = value //meter el comando con su índice
-		nr.Logger.Println("Entrada anyadida: ", value)
+		nr.Logger.Println("Entrada anyadida: ", nr.Logs[nr.lastApplied])
+		nr.Logger.Println("Log entero: ", nr.Logs)
 	}
 	nr.mutex.Unlock()
 
