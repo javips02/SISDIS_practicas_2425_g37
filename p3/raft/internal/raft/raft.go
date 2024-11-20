@@ -43,7 +43,7 @@ const (
 
 	//  false deshabilita por completo los logs de depuracion
 	// Aseguraros de poner kEnableDebugLogs a false antes de la entrega
-	kEnableDebugLogs = true
+	kEnableDebugLogs = false
 
 	// Poner a true para logear a stdout en lugar de a fichero
 	kLogToStdout = false
@@ -346,10 +346,8 @@ func (nr *NodoRaft) someterOperacion(operacion Entry) (bool, int, int,
 			successful++
 		}
 	}
-	nr.Logger.Println()
 	successFlag := false
 	nr.mutex.Lock()
-	nr.Logger.Println()
 	//para esta practica el objetivo es comprometer en todos los nodos
 	if successful == len(nr.Nodos) {
 		successFlag = true
@@ -693,7 +691,6 @@ func (nr *NodoRaft) iniciarEleccion() {
 func (nr *NodoRaft) convertirEnLeader() {
 	nr.Logger.Println("I am the leader now")
 	nr.mutex.Lock()
-	nr.Logger.Println("Toy akì")
 	nr.State = Leader
 	nr.IdLider = nr.Yo
 	nr.leaderHeartBeatTicker.Reset(nr.heartbeatTime)
