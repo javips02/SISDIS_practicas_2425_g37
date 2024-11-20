@@ -422,7 +422,7 @@ func (nr *NodoRaft) SometerOperacionRaft(operacion *Entry,
 // Nombres de campos deben comenzar con letra mayuscula !
 type ArgsPeticionVoto struct {
 	// Vuestros datos aqui
-	Mandato      int //(para pr4)
+	Term         int //(para pr4)
 	CandidateId  int //candidato pidiendo el voto
 	LastLogIndex int // indice de la ultima entrada del log del candidato
 	LastLogTerm  int //(para pr4)
@@ -459,13 +459,13 @@ func (nr *NodoRaft) PedirVoto(peticion *ArgsPeticionVoto,
 
 	//A process remains a follower as long as he gets RPCs from leaders or candidates
 	nr.timeoutTimer.Reset(nr.timeoutTime)
-	if peticion.Mandato > nr.mandatoActual {
-		nr.mandatoActual = peticion.Mandato
+	if peticion.Term > nr.mandatoActual {
+		nr.mandatoActual = peticion.Term
 		nr.votedFor = -1
 		nr.State = Follower
 	}
 
-	nr.Logger.Print("Mandate ", peticion.Mandato, "got PedirVoto by ", peticion.CandidateId)
+	nr.Logger.Print("Mandate ", peticion.Term, "got PedirVoto by ", peticion.CandidateId)
 	if nr.votedFor == -1 {
 		nr.votedFor = peticion.CandidateId
 		reply.VoteGranted = true
@@ -480,7 +480,7 @@ func (nr *NodoRaft) PedirVoto(peticion *ArgsPeticionVoto,
 	} else {
 		nr.Logger.Print("Denied vote request to ", peticion.CandidateId)
 	}
-	nr.Logger.Println("Mandate ", peticion.Mandato, " voted for: ", nr.votedFor)
+	nr.Logger.Println("Mandate ", peticion.Term, " voted for: ", nr.votedFor)
 
 	//TODO: Devolver mandato?
 
@@ -622,7 +622,7 @@ func (nr *NodoRaft) iniciarEleccion() {
 	nr.timeoutTimer.Reset(randomElectionTimeout())
 
 	peticion := ArgsPeticionVoto{
-		Mandato:      nr.mandatoActual,
+		Term:         nr.mandatoActual,
 		CandidateId:  nr.Yo,
 		LastLogIndex: nr.lastApplied,
 		LastLogTerm:  nr.Logs[nr.lastApplied].Mandato,
