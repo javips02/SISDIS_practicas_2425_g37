@@ -495,11 +495,12 @@ func (nr *NodoRaft) AppendEntries(args *ArgsAppendEntries,
 	nr.mutex.Lock()
 	nr.timeoutTimer.Reset(nr.timeoutTime)
 
-	if nr.currentTerm < args.Term {
+	if nr.currentTerm <= args.Term {
 		nr.convertirEnFollower(args.Term, args.LeaderId)
 	}
 	nr.mutex.Unlock()
 	if len(args.Entries) == 0 {
+		nr.Logger.Println("PUM!")
 		results.Success = true
 		return nil
 	}
