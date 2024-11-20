@@ -482,8 +482,6 @@ func (nr *NodoRaft) PedirVoto(peticion *ArgsPeticionVoto,
 	}
 	nr.Logger.Println("Mandate ", peticion.Term, " voted for: ", nr.votedFor)
 
-	//TODO: Devolver mandato?
-
 	return nil
 }
 
@@ -510,15 +508,29 @@ type HeartbeatArgs struct {
 
 type Results struct {
 	Success bool
+	Term    int
 }
 
-// El metodo que el leader llama en los seguidores para insertar una nueva entrada en los seguidores
-// Pueden insertarse varias entradas de un paso, por ejemplo cuando el nodo revive despues de un fallo :)
+// El metodo RPC que el leader llama en los seguidores para insertar una nueva
+// entrada en los seguidores.
+// Pueden insertarse varias entradas de un paso, por ejemplo cuando el nodo
+// revive despues de un fallo :)
 func (nr *NodoRaft) AppendEntries(args *ArgsAppendEntries,
 	results *Results) error {
 	results.Success = true //sin mandatos siempre será success
-	// if term < currentTerm --> reply false
+	// if term < currentTerm --> reply false and the term for the current node
+	if args.Term < nr.mandatoActual {
+		results.Term = nr.mandatoActual
+		results.Success = false
+		return nil
+	}
 	// if !exists entry at prevLogIndex == term from prevLogTerm --> reply false (outdated)
+	if len(nr.Logs) < args.prevLogTerm ||
+		nr.Logs[args.prevLogTerm].Mandato != args.prevLogTerm {
+		results.Term = nr.mandatoActual
+		results.Success = false
+		return nil
+	}
 	//if newEntry.index == otherEntry.index && termNew != termOther --> reply false
 
 	//Append any new entries not already in the log
