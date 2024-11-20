@@ -208,22 +208,22 @@ func (cfg *configDespliegue) tresOperacionesComprometidasEstable(t *testing.T) {
 	var someterReply raft.ResultadoRemoto
 
 	op1 := raft.Entry{
-		Operacion: "write",
-		Clave:     "hola-it",
-		Valor:     "ciao",
+		Operation: "write",
+		Key:       "hola-it",
+		Value:     "ciao",
 	}
 	op2 := raft.Entry{
-		Operacion: "write",
-		Clave:     "hola-en",
-		Valor:     "hello",
+		Operation: "write",
+		Key:       "hola-en",
+		Value:     "hello",
 	}
 	op3 := raft.Entry{
-		Operacion: "read",
-		Clave:     "hola-en",
+		Operation: "read",
+		Key:       "hola-en",
 	}
 	op4 := raft.Entry{
-		Operacion: "read",
-		Clave:     "hola-it",
+		Operation: "read",
+		Key:       "hola-it",
 	}
 
 	err := cfg.nodosRaft[idLider].CallTimeout("NodoRaft.SometerOperacionRaft",
