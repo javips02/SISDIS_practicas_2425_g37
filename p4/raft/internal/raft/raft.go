@@ -65,6 +65,7 @@ type Entry struct {
 	Operacion string // La operaciones posibles son "leer" y "escribir"
 	Clave     string
 	Valor     string // en el caso de la lectura Valor = ""
+	Mandato   int    //mandato al cual pertenece esta entrada
 }
 
 // A medida que el nodo Raft conoce las operaciones de las  entradas de registro
@@ -248,7 +249,7 @@ func (nr *NodoRaft) obtenerEstado() (int, int, bool, int) {
 	var yo = nr.Yo
 	esLider := nr.IdLider == nr.Yo
 	idLider := nr.IdLider
-	mandato := 0
+	mandato := nr.mandatoActual
 
 	nr.mutex.Unlock()
 
@@ -424,7 +425,7 @@ type ArgsPeticionVoto struct {
 	Mandato      int //(para pr4)
 	CandidateId  int //candidato pidiendo el voto
 	LastLogIndex int // indice de la ultima entrada del log del candidato
-	//lastLogTerm int (para pr4)
+	LastLogTerm  int //(para pr4)
 }
 
 // Recordar
@@ -595,17 +596,94 @@ func (nr *NodoRaft) enviarPeticionVoto(nodo int, args *ArgsPeticionVoto,
 // --------------------------------------------------------------------------
 
 func (nr *NodoRaft) monitorizarTemporizadoresRaft() {
-
 	for {
 		select {
-		//In this case, leader hasn't sent a heartbeat in a while, so we start eection
-		case <-nr.timeoutTimer.C: // Election timeout case
-			nr.Logger.Println("Election!")
-			nr.iniciarEleccion() // Start election
+		case <-nr.timeoutTimer.C:
+			nr.mutex.Lock()
+			if nr.State != Leader {
+				nr.iniciarEleccion()
+			}
+			nr.mutex.Unlock()
+		case <-nr.leaderHeartBeatTicker.C:
+			if nr.State == Leader {
+				nr.enviarLatidosATodos()
+			}
+		}
+	}
+}
 
-		case <-nr.leaderHeartBeatTicker.C: // Leader heartbeat case
-			//nr.Logger.Println("PUM!")
-			go nr.enviarLatidosATodos()
+func (nr *NodoRaft) iniciarEleccion() {
+
+	nr.mutex.Lock()
+	//nr.timeoutTimer.Stop()
+	nr.State = Candidate
+	nr.mandatoActual++
+	nr.votedFor = nr.Yo // Se vota a sí mismo
+	nr.timeoutTimer.Reset(randomElectionTimeout())
+
+	peticion := ArgsPeticionVoto{
+		Mandato:      nr.mandatoActual,
+		CandidateId:  nr.Yo,
+		LastLogIndex: nr.lastApplied,
+		LastLogTerm:  nr.Logs[nr.lastApplied].Mandato,
+	}
+	nr.mutex.Unlock()
+
+	nr.Logger.Printf("Starting election for mandate %d\n", nr.mandatoActual)
+
+	// Canal respuestas RPC bufferizado (soporte a respuestas concurrentes)
+	responses := make(chan RespuestaPeticionVoto, len(nr.Nodos))
+
+	// Lanza una goroutine para cada nodo excepto el propio
+	for i := range nr.Nodos {
+		if i != nr.Yo {
+			go func(nodoID int) {
+				var respuesta = RespuestaPeticionVoto{
+					VoteGranted: false,
+				}
+				nr.enviarPeticionVoto(nodoID, &peticion, &respuesta)
+				responses <- respuesta // Envía la respuesta recibida al canal
+				nr.Logger.Printf(
+					"Node %d responded with VoteGranted=%v for "+
+						"mandate %d\n", nodoID, respuesta.VoteGranted,
+					respuesta.Mandate)
+			}(i)
+		}
+	}
+
+	electionEnd := time.NewTimer(randomElectionTimeout())
+
+	//We voted for ourselves
+	grantedVotes := 1
+	for {
+		select {
+		case <-electionEnd.C:
+			nr.Logger.Println("Election timeout. Returning to follower state.")
+			nr.mutex.Lock()
+			nr.State = Follower
+			nr.votedFor = -1
+			nr.mutex.Unlock()
+			return
+		case response := <-responses:
+			nr.mutex.Lock()
+			if response.Mandate > nr.mandatoActual {
+				nr.Logger.Println("Found higher mandate. Returning to follower state.")
+				nr.mandatoActual = response.Mandate
+				nr.State = Follower
+				nr.votedFor = -1
+				nr.mutex.Unlock()
+				return
+			}
+			if response.VoteGranted && response.Mandate == nr.mandatoActual {
+				grantedVotes++
+				nr.Logger.Printf("Vote granted! Total: %d\n", grantedVotes)
+				if grantedVotes > len(nr.Nodos)/2 {
+					nr.convertirEnLeader()
+					nr.mutex.Unlock()
+					return
+				}
+			}
+			nr.mutex.Unlock()
 		}
 	}
 }
@@ -619,74 +697,17 @@ func (nr *NodoRaft) enviarLatidosATodos() {
 		go func(nr *NodoRaft, nodo int, args *HeartbeatArgs) {
 			reply := Vacio{}
 			if nodo != nr.Yo {
-				err := nr.Nodos[nodo].CallTimeout("NodoRaft.Heartbeat", args, &reply, 10*time.Millisecond)
+				err := nr.Nodos[nodo].CallTimeout(
+					"NodoRaft.Heartbeat",
+					args,
+					&reply,
+					10*time.Millisecond)
 				if err != nil {
-					nr.Logger.Println("Failed to send beat to ", nodo)
+					nr.Logger.Println(
+						"Failed to send beat to ", nodo)
 				}
 			}
 		}(nr, i, &args)
-	}
-}
-
-func (nr *NodoRaft) iniciarEleccion() {
-
-	nr.mutex.Lock()
-	//nr.timeoutTimer.Stop()
-	nr.State = Candidate
-	nr.votedFor = nr.Yo // Se vota a sí mismo
-	nr.mandatoActual++
-	peticion := ArgsPeticionVoto{
-		CandidateId:  nr.Yo,
-		Mandato:      nr.mandatoActual,
-		LastLogIndex: nr.lastApplied,
-	}
-	nr.mutex.Unlock()
-
-	nr.Logger.Printf("Starting election for mandate %d\n", nr.mandatoActual)
-
-	// Lanza una goroutine para cada nodo excepto el propio
-	responses := make(chan RespuestaPeticionVoto) // Canal respuestas RPC
-
-	for i := range nr.Nodos {
-		if i != nr.Yo {
-			go func(nodoID int) {
-				var respuesta = RespuestaPeticionVoto{
-					VoteGranted: false,
-				}
-				nr.enviarPeticionVoto(nodoID, &peticion, &respuesta)
-				responses <- respuesta // Envía la respuesta recibida al canal
-			}(i)
-		}
-	}
-
-	electionEnd := time.NewTimer(randomElectionTimeout())
-
-	//We voted for ourselves
-	grantedVotes := 1
-	for {
-		select {
-		case <-electionEnd.C:
-			nr.mutex.Lock()
-			nr.timeoutTimer.Reset(nr.timeoutTime)
-			nr.Logger.Println("**Election ended for mandate **", nr.mandatoActual)
-			nr.mutex.Unlock()
-			return
-		case response := <-responses:
-			// do stuff. I'd call a function, for clarity:
-			nr.mutex.Lock()
-			if response.VoteGranted && response.Mandate == nr.mandatoActual {
-				nr.mutex.Unlock()
-				grantedVotes++
-				if grantedVotes > len(nr.Nodos)/2 {
-					nr.convertirEnLeader()
-					return
-				}
-			} else {
-				nr.mutex.Unlock()
-			}
-			//TODO:
-			//case si recibo pedirElecion con mandato mas alto?
-		}
 	}
 }
 
