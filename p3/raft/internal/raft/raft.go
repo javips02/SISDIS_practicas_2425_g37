@@ -43,7 +43,7 @@ const (
 
 	//  false deshabilita por completo los logs de depuracion
 	// Aseguraros de poner kEnableDebugLogs a false antes de la entrega
-	kEnableDebugLogs = false
+	kEnableDebugLogs = true
 
 	// Poner a true para logear a stdout en lugar de a fichero
 	kLogToStdout = false
@@ -491,9 +491,9 @@ type Results struct {
 // Pueden insertarse varias entradas de un paso, por ejemplo cuando el nodo revive despues de un fallo :)
 func (nr *NodoRaft) AppendEntries(args *ArgsAppendEntries,
 	results *Results) error {
-	nr.timeoutTimer.Reset(nr.timeoutTime)
 
 	nr.mutex.Lock()
+	nr.timeoutTimer.Reset(nr.timeoutTime)
 
 	if nr.currentTerm < args.Term {
 		nr.convertirEnFollower(args.Term, args.LeaderId)
