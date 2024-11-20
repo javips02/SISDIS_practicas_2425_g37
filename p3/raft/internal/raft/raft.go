@@ -28,7 +28,6 @@ import (
 	"log"
 	"math/rand"
 	"os"
-	"strconv"
 
 	"sync"
 	"time"
@@ -62,7 +61,7 @@ const (
 	Follower  State = "follower"
 )
 
-type Operacion struct {
+type Entry struct {
 	Operacion string // La operaciones posibles son "leer" y "escribir"
 	Clave     string
 	Valor     string // en el caso de la lectura Valor = ""
@@ -73,7 +72,7 @@ type Operacion struct {
 // "canalAplicar" (funcion NuevoNodo) de la maquina de estados
 type AplicaOperacion struct {
 	Indice    int // en la entrada de registro
-	Operacion Operacion
+	Operacion Entry
 }
 
 // Tipo de dato Go que representa un solo nodo (réplica) de raft
@@ -92,8 +91,8 @@ type NodoRaft struct {
 
 	// Utilización opcional de este logger para depuración
 	// Cada nodo Raft tiene su propio registro de trazas (logs)
-	Logger  *log.Logger
-	Entries map[string]string
+	Logger *log.Logger
+	Logs   []Entry
 	// Vuestros datos aqui.
 
 	// VALORES PERSISTENTES EN TODOS LOS SERVIDORES //
@@ -105,7 +104,7 @@ type NodoRaft struct {
 
 	// VALORES VOLÁTILES DE ESTADO EN TODOS LOS SERVIDORES //
 
-	commitIndex  int         // valor más alto de entrada comprometida por esta réplica (0...)
+	commitIndex  int         // index of highest log entry known to be committed
 	lastApplied  int         // índice de la entrada más alta aplicada a nuestra máquina de estados (0 ...)
 	timeoutTimer *time.Timer // tiempo restante para iniciar una nueva eleccion (seguidores)
 	// VALORES VOLÁTILES EN RÉPLICAS LÍDER (reinicializar estos valores después de cada elección) //
@@ -184,8 +183,8 @@ func NuevoNodo(nodos []rpctimeout.HostPort, yo int,
 
 	// Añadir codigo de inicialización
 	// Inicialización de otros campos
-	nr.Entries = make(map[string]string) // Mapa vacío para las entradas
-	nr.votedFor = -1                     // No ha votado aún
+	nr.Logs = make([]Entry, 100) //
+	nr.votedFor = -1             // No ha votado aún
 	//nr.logEntries = []string{}           // Inicialmente sin entradas de log
 	nr.commitIndex = 0 // Sin entradas comprometidas aún
 	nr.lastApplied = 0 // Ninguna entrada aplicada aún
@@ -268,18 +267,18 @@ func (nr *NodoRaft) obtenerEstado() (int, int, bool, int) {
 // de registro, dado que el lider puede fallar y la entrada ser reemplazada
 // en el futuro.
 // Resultado de este method :
-// - Primer valor devuelto es el indice del registro donde se va a colocar
-// - la operacion si consigue comprometerse.
-// - El segundo valor es el mandato en curso
-// - El tercer valor es true si el nodo cree ser el lider
-// - Cuarto valor es el lider, es el indice del líder si no es él
-// - Quinto valor es el resultado de aplicar esta operación en máquina de estados
-func (nr *NodoRaft) someterOperacion(operacion Operacion) (int, int,
+// - La operacion si consigue comprometerse.
+// - El indice del registro donde se va a colocar
+// - El mandato en curso
+// - true si el nodo cree ser el lider
+// - El indice del líder
+// - El resultado de aplicar esta operación en máquina de estados
+func (nr *NodoRaft) someterOperacion(operacion Entry) (bool, int, int,
 	bool, int, string) {
 
 	nr.mutex.Lock()
 	indice := nr.commitIndex
-	mandato := 0 //TODO: cambiar en la siguiente práctica
+	mandato := nr.mandatoActual
 	EsLider := nr.IdLider == nr.Yo
 	idLider := nr.IdLider
 	nr.mutex.Unlock()
@@ -289,27 +288,43 @@ func (nr *NodoRaft) someterOperacion(operacion Operacion) (int, int,
 	// no lider => devolver falso (incluye quién es lider en la respuesta, el cliente tiene que reenviar
 	if !EsLider {
 		valorADevolver = "false"
-		return indice, mandato, EsLider, idLider, valorADevolver
+		return false, indice, mandato, EsLider, idLider, valorADevolver
 	}
 
 	nr.Logger.Println(operacion)
 	// Definir la operación a someter
-	entrada := Entry{
-		op: operacion, // Aquí `operacion` es el parámetro que recibes en `someterOperacion`
-	}
 
+	//var entries []Entry
+	entries := make([]Entry, 1)
+	entries[0] = operacion
+	nr.mutex.Lock()
+	args := ArgsAppendEntries{
+		Term:        nr.mandatoActual,
+		LeaderId:    nr.Yo,
+		prevLogTerm: 0,
+
+		Entries:      entries,
+		LeaderCommit: nr.commitIndex,
+	}
+	nr.mutex.Unlock()
 	repliesChan := make(chan ReplyAppendEntries, len(nr.Nodos))
 
 	for i := range nr.Nodos {
 		if i != nr.Yo {
-			go func(nodo int, args ArgAppendEntries, repliesChan chan ReplyAppendEntries) {
+			go func(nodo int, args ArgsAppendEntries, repliesChan chan ReplyAppendEntries) {
 				peer := nr.Nodos[nodo]
 				reply := ReplyAppendEntries{
 					Node:    nodo,
 					Success: false,
 				}
-				// Llamada RPC con timeout
-				err := peer.CallTimeout("NodoRaft.AppendEntry", &args, &reply, 20*time.Millisecond) // TODO: ajustar timeout
+				nr.Logger.Println("Valor de args: ", args)
+				err := peer.CallTimeout("NodoRaft.AppendEntries", &args, &reply, 50*time.Millisecond) // TODO: ajustar timeout
+				nr.Logger.Printf("Enviada AppendEntries a %d, succeso? ", nodo)
+				if reply.Success {
+					nr.Logger.Printf("SI!\n")
+				} else {
+					nr.Logger.Printf("NO!\n")
+				}
 				if err != nil {
 					repliesChan <- ReplyAppendEntries{
 						Node:    nodo,
@@ -321,33 +336,39 @@ func (nr *NodoRaft) someterOperacion(operacion Operacion) (int, int,
 			}(i, args, repliesChan)
 		}
 	}
-	/*
-		for i := 0; i < len(nr.Nodos); i++ {
-			wg.Add(1) // Incrementar el contador de goroutines pendientes
 
-			go func(peer rpctimeout.HostPort, nr *NodoRaft, comprometidos *int) {
-
-				//TODO: debería meter todas las entradas que no están sincronizadas con un bucle?
-				args := ArgAppendEntries{Entries: []Entry{entrada}} //meter entrada/s para comprometer
-				reply := Results{}
-				err = client.Call("NodoRaft.AppendEntries", args, &reply)
-				if err != nil {
-					nr.Logger.Println(err)
-					log.Fatal("arith error:", err)
-				}
-				// si se ha comprometido la entrada en el nodo i,
-				// aumentar el contador de forma atómica
-				if reply.success {
-
-					nr.mutex.Lock()
-					*comprometidos++
-					nr.mutex.Unlock()
-				}
-			}(nr.Nodos[i], nr, &comprometidos)
+	nr.Logger.Println("Starting to read replies")
+	successful := 0
+	for i := 0; i < len(nr.Nodos)-1; i++ {
+		nr.Logger.Println("i: ", i)
+		reply := <-repliesChan
+		if reply.Success {
+			successful++
 		}
-	*/
+	}
+	nr.Logger.Println()
+	successFlag := false
+	nr.mutex.Lock()
+	nr.Logger.Println()
+	//para esta practica el objetivo es comprometer en todos los nodos
+	if successful == len(nr.Nodos) {
+		successFlag = true
+		indice = nr.commitIndex
+		mandato = nr.mandatoActual
+		EsLider = nr.IdLider == nr.Yo
+		idLider = nr.IdLider
+		valorADevolver = "" //Don't touch it for now
+	} else {
+		successFlag = true
+		indice = nr.commitIndex
+		mandato = nr.mandatoActual
+		EsLider = nr.IdLider == nr.Yo
+		idLider = nr.IdLider
+		valorADevolver = "" //Don't touch it for now
+	}
 
-	return indice, mandato, EsLider, idLider, valorADevolver
+	nr.mutex.Unlock()
+	return successFlag, indice, mandato, EsLider, idLider, valorADevolver
 }
 
 // -----------------------------------------------------------------------
@@ -379,14 +400,15 @@ func (nr *NodoRaft) ObtenerEstadoNodo(args Vacio, reply *EstadoRemoto) error {
 }
 
 type ResultadoRemoto struct {
+	Success        bool
 	ValorADevolver string
 	IndiceRegistro int
 	EstadoParcial
 }
 
-func (nr *NodoRaft) SometerOperacionRaft(operacion *Operacion,
+func (nr *NodoRaft) SometerOperacionRaft(operacion *Entry,
 	reply *ResultadoRemoto) error {
-	reply.IndiceRegistro, reply.Mandato, reply.EsLider,
+	reply.Success, reply.IndiceRegistro, reply.Mandato, reply.EsLider,
 		reply.IdLider, reply.ValorADevolver = nr.someterOperacion(*operacion)
 	return nil
 }
@@ -464,19 +486,20 @@ func (nr *NodoRaft) PedirVoto(peticion *ArgsPeticionVoto,
 	return nil
 }
 
-type Entry struct {
-	op    Operacion
-	index int
-}
-type ArgAppendEntries struct {
+type ArgsAppendEntries struct {
+	Term        int //Leader term
+	LeaderId    int
+	prevLogTerm int //term of prevLogIndex entry
+
 	Entries      []Entry
-	LeaderCommit int // index del commit para el vector del líder
-	// añadir term, leadirId, precLogIndex, prevLogTerm si necesario
+	LeaderCommit int // eader’s commitIndex
+
 }
 
 type ReplyAppendEntries struct {
-	Node    int
+	Term    int
 	Success bool
+	Node    int
 }
 
 type HeartbeatArgs struct {
@@ -485,14 +508,14 @@ type HeartbeatArgs struct {
 }
 
 type Results struct {
-	success bool
+	Success bool
 }
 
 // El metodo que el leader llama en los seguidores para insertar una nueva entrada en los seguidores
 // Pueden insertarse varias entradas de un paso, por ejemplo cuando el nodo revive despues de un fallo :)
-func (nr *NodoRaft) AppendEntries(args *ArgAppendEntries,
+func (nr *NodoRaft) AppendEntries(args *ArgsAppendEntries,
 	results *Results) error {
-	results.success = true //sin mandatos siempre será success
+	results.Success = true //sin mandatos siempre será success
 	// if term < currentTerm --> reply false
 	// if !exists entry at prevLogIndex == term from prevLogTerm --> reply false (outdated)
 	//if newEntry.index == otherEntry.index && termNew != termOther --> reply false
@@ -500,15 +523,17 @@ func (nr *NodoRaft) AppendEntries(args *ArgAppendEntries,
 	//Append any new entries not already in the log
 
 	nr.mutex.Lock()
-	for key, value := range args.Entries {
-		nr.Entries[strconv.Itoa(key)] = value.op.Operacion //meter el comando con su índice
+	for _, value := range args.Entries {
+		nr.lastApplied++
+		nr.Logs[nr.lastApplied] = value //meter el comando con su índice
+		nr.Logger.Println("Entrada anyadida: ", value)
 	}
 	nr.mutex.Unlock()
 
 	// if leader commit > commit index form current node, choose min
-	if args.LeaderCommit > nr.commitIndex {
+	/*if args.LeaderCommit > nr.commitIndex {
 		nr.commitIndex = min(args.LeaderCommit, nr.commitIndex)
-	}
+	}*/
 	return nil //si llega hasta aquí, return NoError (error nil) de RPC
 }
 

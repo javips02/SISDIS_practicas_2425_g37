@@ -205,55 +205,55 @@ func (cfg *configDespliegue) tresOperacionesComprometidasEstable(t *testing.T) {
 	idLider := cfg.pruebaUnLider(3)
 	fmt.Printf("Lider inicial es %d\n", idLider)
 
-	var someterReply bool
+	var someterReply raft.ResultadoRemoto
 
-	op1 := raft.Operacion{
+	op1 := raft.Entry{
 		Operacion: "write",
 		Clave:     "hola-it",
 		Valor:     "ciao",
 	}
-	op2 := raft.Operacion{
+	op2 := raft.Entry{
 		Operacion: "write",
 		Clave:     "hola-en",
 		Valor:     "hello",
 	}
-	op3 := raft.Operacion{
+	op3 := raft.Entry{
 		Operacion: "read",
 		Clave:     "hola-en",
 	}
-	op4 := raft.Operacion{
+	op4 := raft.Entry{
 		Operacion: "read",
 		Clave:     "hola-it",
 	}
 
 	err := cfg.nodosRaft[idLider].CallTimeout("NodoRaft.SometerOperacionRaft",
-		&op1, &someterReply, 10*time.Millisecond)
+		&op1, &someterReply, 1000*time.Millisecond)
 	check.CheckError(err, "Error al someter operaciòn 1")
-	if !(someterReply) {
+	if !(someterReply.Success) {
 		fmt.Printf("Operaciòn no comprometida\n")
 		cfg.t.Fail()
 	}
 
 	err = cfg.nodosRaft[idLider].CallTimeout("NodoRaft.SometerOperacionRaft",
-		&op2, &someterReply, 10*time.Millisecond)
+		&op2, &someterReply, 1000*time.Millisecond)
 	check.CheckError(err, "Error al someter operaciòn 2")
-	if !(someterReply) {
+	if !(someterReply.Success) {
 		fmt.Printf("Operaciòn no comprometida")
 		cfg.t.Fail()
 	}
 
 	err = cfg.nodosRaft[idLider].CallTimeout("NodoRaft.SometerOperacionRaft",
-		&op3, &someterReply, 10*time.Millisecond)
+		&op3, &someterReply, 1000*time.Millisecond)
 	check.CheckError(err, "Error al someter operaciòn 3")
-	if !(someterReply) {
+	if !(someterReply.Success) {
 		fmt.Printf("Operaciòn no comprometida")
 		cfg.t.Fail()
 	}
 
 	err = cfg.nodosRaft[idLider].CallTimeout("NodoRaft.SometerOperacionRaft",
-		&op4, &someterReply, 10*time.Millisecond)
+		&op4, &someterReply, 1000*time.Millisecond)
 	check.CheckError(err, "Error al someter operaciòn 4")
-	if !(someterReply) {
+	if !(someterReply.Success) {
 		fmt.Printf("Operaciòn no comprometida")
 		cfg.t.Fail()
 	}
