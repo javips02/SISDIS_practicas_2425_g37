@@ -2,8 +2,7 @@ package main
 
 import (
 	//"errors"
-	"fmt"
-
+	//"fmt"
 	//"log"
 	"net"
 	"net/rpc"
@@ -31,7 +30,7 @@ func main() {
 	nr := raft.NuevoNodo(nodos, me, make(chan raft.AplicaOperacion, 1000))
 	rpc.Register(nr)
 
-	fmt.Println("Replica escucha en :", me, " de ", os.Args[2:])
+	//fmt.Println("Replica escucha en :", me, " de ", os.Args[2:])
 
 	l, err := net.Listen("tcp", os.Args[2:][me])
 	check.CheckError(err, "Main listen error:")
