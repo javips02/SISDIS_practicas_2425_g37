@@ -517,7 +517,7 @@ type Results struct {
 // revive despues de un fallo :)
 func (nr *NodoRaft) AppendEntries(args *ArgsAppendEntries,
 	results *Results) error {
-	results.Success = true //sin mandatos siempre será success
+
 	// 1. if term < currentTerm --> reply false and the term for the current node
 	if args.Term < nr.mandatoActual {
 		results.Term = nr.mandatoActual
@@ -541,7 +541,6 @@ func (nr *NodoRaft) AppendEntries(args *ArgsAppendEntries,
 			nr.mutex.Unlock()
 		}
 	}
-
 	//4. Append any new entries not already in the log
 	nr.mutex.Lock()
 	nr.Logs = append(nr.Logs[:nr.lastApplied+1], args.Entries...)
@@ -554,6 +553,10 @@ func (nr *NodoRaft) AppendEntries(args *ArgsAppendEntries,
 	if args.LeaderCommit > nr.commitIndex {
 		nr.commitIndex = min(args.LeaderCommit, nr.commitIndex)
 	}
+	// Creación de respuesta una vez tratados los datos
+	results.Success = true
+	results.Term = nr.mandatoActual
+
 	return nil //si llega hasta aquí, return NoError (error nil) de RPC
 }
 
