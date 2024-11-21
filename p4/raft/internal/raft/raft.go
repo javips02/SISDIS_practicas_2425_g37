@@ -300,10 +300,9 @@ func (nr *NodoRaft) someterOperacion(operacion Entry) (bool, int, int,
 	entries[0] = operacion
 	nr.mutex.Lock()
 	args := ArgsAppendEntries{
-		Term:        nr.mandatoActual,
-		LeaderId:    nr.Yo,
-		prevLogTerm: 0,
-
+		Term:         nr.mandatoActual,
+		LeaderId:     nr.Yo,
+		prevLogTerm:  0,
 		Entries:      entries,
 		LeaderCommit: nr.commitIndex,
 	}
@@ -315,6 +314,7 @@ func (nr *NodoRaft) someterOperacion(operacion Entry) (bool, int, int,
 			go func(nodo int, args ArgsAppendEntries, repliesChan chan ReplyAppendEntries) {
 				peer := nr.Nodos[nodo]
 				reply := ReplyAppendEntries{
+					Term:    nr.mandatoActual,
 					Node:    nodo,
 					Success: false,
 				}
@@ -328,6 +328,7 @@ func (nr *NodoRaft) someterOperacion(operacion Entry) (bool, int, int,
 				}
 				if err != nil {
 					repliesChan <- ReplyAppendEntries{
+						Term:    nr.mandatoActual, //asumimos mandato nuestro
 						Node:    nodo,
 						Success: false,
 					}
@@ -345,14 +346,20 @@ func (nr *NodoRaft) someterOperacion(operacion Entry) (bool, int, int,
 		reply := <-repliesChan
 		if reply.Success {
 			successful++
+			// Update term if necessary
+			if reply.Term > nr.mandatoActual {
+				nr.mutex.Lock()
+				nr.mandatoActual = reply.Term
+				nr.mutex.Unlock()
+			}
 		}
 	}
 	nr.Logger.Println()
 	successFlag := false
 	nr.mutex.Lock()
 	nr.Logger.Println()
-	//para esta practica el objetivo es comprometer en todos los nodos
-	if successful == len(nr.Nodos) {
+	//para esta pr el objetivo es comprometer en mas de la mitad de los nodos
+	if successful >= len(nr.Nodos)/2 {
 		successFlag = true
 		indice = nr.commitIndex
 		mandato = nr.mandatoActual
@@ -609,6 +616,13 @@ func (nr *NodoRaft) enviarPeticionVoto(nodo int, args *ArgsPeticionVoto,
 		return false
 	}
 	nr.Logger.Println(nodo, " me diò voto a mi, ", nr.Yo)
+
+	//update term
+	if reply.Mandate > nr.mandatoActual {
+		nr.mutex.Lock()
+		nr.mandatoActual = reply.Mandate
+		nr.mutex.Unlock()
+	}
 	return true
 }
 
