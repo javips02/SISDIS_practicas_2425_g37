@@ -544,12 +544,9 @@ func (nr *NodoRaft) AppendEntries(args *ArgsAppendEntries,
 
 	//4. Append any new entries not already in the log
 	nr.mutex.Lock()
-	for _, value := range args.Entries {
-		nr.lastApplied++
-		nr.Logs[nr.lastApplied] = value //meter el comando con su índice
-		nr.Logger.Println("Entrada anyadida: ", nr.Logs[nr.lastApplied])
-		nr.Logger.Println("Log entero: ", nr.Logs)
-	}
+	nr.Logs = append(nr.Logs[:nr.lastApplied+1], args.Entries...)
+	nr.lastApplied = len(nr.Logs) - 1
+	nr.Logger.Println("Log actualizado: ", nr.Logs)
 	nr.mutex.Unlock()
 
 	// if leader commit > commit index form current node, choose min
