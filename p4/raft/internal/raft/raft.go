@@ -62,10 +62,10 @@ const (
 )
 
 type Entry struct {
-	Operacion string // La operaciones posibles son "leer" y "escribir"
-	Clave     string
-	Valor     string // en el caso de la lectura Valor = ""
-	Mandato   int    //mandato al cual pertenece esta entrada
+	Operation string // La operaciones posibles son "leer" y "escribir"
+	Key       string
+	Value     string // en el caso de la lectura Valor = ""
+	Mandate   int    //mandato al cual pertenece esta entrada
 }
 
 // A medida que el nodo Raft conoce las operaciones de las  entradas de registro
@@ -80,10 +80,10 @@ type AplicaOperacion struct {
 type NodoRaft struct {
 	mutex sync.Mutex // Mutex para proteger acceso a estado compartido
 	// Host:Port de todos los nodos (réplicas) Raft, en mismo orden
-	Nodos   []rpctimeout.HostPort
-	Yo      int // indice de este nodos en campo array "nodos"
-	IdLider int
-	State   State
+	Nodos    []rpctimeout.HostPort
+	Yo       int // indice de este nodos en campo array "nodos"
+	LeaderId int
+	State    State
 
 	//Time before the replicas should consider a timeout and start election
 	timeoutTime time.Duration
@@ -98,8 +98,8 @@ type NodoRaft struct {
 
 	// VALORES PERSISTENTES EN TODOS LOS SERVIDORES //
 
-	mandatoActual int // Indica el mandato más reciente que esta réplica conoce
-	votedFor      int //candidato que ha recibido el voto en el mandato actual
+	currentTerm int // Indica el mandato más reciente que esta réplica conoce
+	votedFor    int //candidato que ha recibido el voto en el mandato actual
 	//numVotes      int //number of votes recieved in the current election
 	//el log es Entries map[string][string] que venía dado
 
@@ -136,8 +136,8 @@ func NuevoNodo(nodos []rpctimeout.HostPort, yo int,
 	nr := &NodoRaft{}
 	nr.Nodos = nodos
 	nr.Yo = yo
-	nr.mandatoActual = 0
-	nr.IdLider = -1
+	nr.currentTerm = 0
+	nr.LeaderId = -1
 	nr.State = Follower
 	//barrera.Add(1)
 
@@ -247,9 +247,9 @@ func (nr *NodoRaft) obtenerEstado() (int, int, bool, int) {
 
 	nr.mutex.Lock()
 	var yo = nr.Yo
-	esLider := nr.IdLider == nr.Yo
-	idLider := nr.IdLider
-	mandato := nr.mandatoActual
+	esLider := nr.LeaderId == nr.Yo
+	idLider := nr.LeaderId
+	mandato := nr.currentTerm
 
 	nr.mutex.Unlock()
 
@@ -279,9 +279,9 @@ func (nr *NodoRaft) someterOperacion(operacion Entry) (bool, int, int,
 
 	nr.mutex.Lock()
 	indice := nr.commitIndex
-	mandato := nr.mandatoActual
-	EsLider := nr.IdLider == nr.Yo
-	idLider := nr.IdLider
+	mandato := nr.currentTerm
+	EsLider := nr.LeaderId == nr.Yo
+	idLider := nr.LeaderId
 	nr.mutex.Unlock()
 
 	valorADevolver := ""
@@ -300,7 +300,7 @@ func (nr *NodoRaft) someterOperacion(operacion Entry) (bool, int, int,
 	entries[0] = operacion
 	nr.mutex.Lock()
 	args := ArgsAppendEntries{
-		Term:         nr.mandatoActual,
+		Term:         nr.currentTerm,
 		LeaderId:     nr.Yo,
 		prevLogTerm:  0,
 		Entries:      entries,
@@ -314,7 +314,7 @@ func (nr *NodoRaft) someterOperacion(operacion Entry) (bool, int, int,
 			go func(nodo int, args ArgsAppendEntries, repliesChan chan ReplyAppendEntries) {
 				peer := nr.Nodos[nodo]
 				reply := ReplyAppendEntries{
-					Term:    nr.mandatoActual,
+					Term:    nr.currentTerm,
 					Node:    nodo,
 					Success: false,
 				}
@@ -328,7 +328,7 @@ func (nr *NodoRaft) someterOperacion(operacion Entry) (bool, int, int,
 				}
 				if err != nil {
 					repliesChan <- ReplyAppendEntries{
-						Term:    nr.mandatoActual, //asumimos mandato nuestro
+						Term:    nr.currentTerm, //asumimos mandato nuestro
 						Node:    nodo,
 						Success: false,
 					}
@@ -347,9 +347,9 @@ func (nr *NodoRaft) someterOperacion(operacion Entry) (bool, int, int,
 		if reply.Success {
 			successful++
 			// Update term if necessary
-			if reply.Term > nr.mandatoActual {
+			if reply.Term > nr.currentTerm {
 				nr.mutex.Lock()
-				nr.mandatoActual = reply.Term
+				nr.currentTerm = reply.Term
 				nr.mutex.Unlock()
 			}
 		}
@@ -362,16 +362,16 @@ func (nr *NodoRaft) someterOperacion(operacion Entry) (bool, int, int,
 	if successful >= len(nr.Nodos)/2 {
 		successFlag = true
 		indice = nr.commitIndex
-		mandato = nr.mandatoActual
-		EsLider = nr.IdLider == nr.Yo
-		idLider = nr.IdLider
+		mandato = nr.currentTerm
+		EsLider = nr.LeaderId == nr.Yo
+		idLider = nr.LeaderId
 		valorADevolver = "" //Don't touch it for now
 	} else {
 		successFlag = true
 		indice = nr.commitIndex
-		mandato = nr.mandatoActual
-		EsLider = nr.IdLider == nr.Yo
-		idLider = nr.IdLider
+		mandato = nr.currentTerm
+		EsLider = nr.LeaderId == nr.Yo
+		idLider = nr.LeaderId
 		valorADevolver = "" //Don't touch it for now
 	}
 
@@ -450,7 +450,7 @@ func (nr *NodoRaft) Heartbeat(args *HeartbeatArgs,
 	//nr.Logger.Println("Latido desde ", args.IdLeader, " mandato ", args.Mandato)
 	nr.timeoutTimer.Reset(nr.timeoutTime)
 	nr.mutex.Lock()
-	if nr.mandatoActual < args.Mandato {
+	if nr.currentTerm < args.Mandato {
 		nr.convertirEnFollower(args.Mandato, args.IdLeader)
 	}
 	nr.mutex.Unlock()
@@ -466,8 +466,8 @@ func (nr *NodoRaft) PedirVoto(peticion *ArgsPeticionVoto,
 
 	//A process remains a follower as long as he gets RPCs from leaders or candidates
 	nr.timeoutTimer.Reset(nr.timeoutTime)
-	if peticion.Term > nr.mandatoActual {
-		nr.mandatoActual = peticion.Term
+	if peticion.Term > nr.currentTerm {
+		nr.currentTerm = peticion.Term
 		nr.votedFor = -1
 		nr.State = Follower
 	}
@@ -479,7 +479,7 @@ func (nr *NodoRaft) PedirVoto(peticion *ArgsPeticionVoto,
 	} else {
 		reply.VoteGranted = false
 	}
-	reply.Mandate = nr.mandatoActual
+	reply.Mandate = nr.currentTerm
 	nr.mutex.Unlock()
 
 	if reply.VoteGranted {
@@ -526,23 +526,23 @@ func (nr *NodoRaft) AppendEntries(args *ArgsAppendEntries,
 	results *Results) error {
 
 	// 1. if term < currentTerm --> reply false and the term for the current node
-	if args.Term < nr.mandatoActual {
-		results.Term = nr.mandatoActual
+	if args.Term < nr.currentTerm {
+		results.Term = nr.currentTerm
 		results.Success = false
 		return nil
 	}
 	// 2. if !exists entry at prevLogIndex == term from prevLogTerm --> reply false
 	if len(nr.Logs) < args.prevLogTerm ||
-		nr.Logs[args.prevLogTerm].Mandato != args.prevLogTerm {
-		results.Term = nr.mandatoActual
+		nr.Logs[args.prevLogTerm].Mandate != args.prevLogTerm {
+		results.Term = nr.currentTerm
 		results.Success = false
 		return nil
 	}
 	//3. if newEntry.index == otherEntry.index && termNew != termOther --> reply false
 	for i, entry := range nr.Logs {
 		fmt.Printf("Operacion: %s, Clave: %s, Valor: %s, Mandato: %d\n",
-			entry.Operacion, entry.Clave, entry.Valor, entry.Mandato)
-		if args.LeaderCommit == i && args.Term != nr.Logs[i].Mandato {
+			entry.Operation, entry.Key, entry.Value, entry.Mandate)
+		if args.LeaderCommit == i && args.Term != nr.Logs[i].Mandate {
 			nr.mutex.Lock()
 			nr.Logs = nr.Logs[:i]
 			nr.mutex.Unlock()
@@ -562,7 +562,7 @@ func (nr *NodoRaft) AppendEntries(args *ArgsAppendEntries,
 	}
 	// Creación de respuesta una vez tratados los datos
 	results.Success = true
-	results.Term = nr.mandatoActual
+	results.Term = nr.currentTerm
 
 	return nil //si llega hasta aquí, return NoError (error nil) de RPC
 }
@@ -618,9 +618,9 @@ func (nr *NodoRaft) enviarPeticionVoto(nodo int, args *ArgsPeticionVoto,
 	nr.Logger.Println(nodo, " me diò voto a mi, ", nr.Yo)
 
 	//update term
-	if reply.Mandate > nr.mandatoActual {
+	if reply.Mandate > nr.currentTerm {
 		nr.mutex.Lock()
-		nr.mandatoActual = reply.Mandate
+		nr.currentTerm = reply.Mandate
 		nr.mutex.Unlock()
 	}
 	return true
@@ -652,19 +652,19 @@ func (nr *NodoRaft) iniciarEleccion() {
 	nr.mutex.Lock()
 	//nr.timeoutTimer.Stop()
 	nr.State = Candidate
-	nr.mandatoActual++
+	nr.currentTerm++
 	nr.votedFor = nr.Yo // Se vota a sí mismo
 	nr.timeoutTimer.Reset(randomElectionTimeout())
 
 	peticion := ArgsPeticionVoto{
-		Term:         nr.mandatoActual,
+		Term:         nr.currentTerm,
 		CandidateId:  nr.Yo,
 		LastLogIndex: nr.lastApplied,
-		LastLogTerm:  nr.Logs[nr.lastApplied].Mandato,
+		LastLogTerm:  nr.Logs[nr.lastApplied].Mandate,
 	}
 	nr.mutex.Unlock()
 
-	nr.Logger.Printf("Starting election for mandate %d\n", nr.mandatoActual)
+	nr.Logger.Printf("Starting election for mandate %d\n", nr.currentTerm)
 
 	// Canal respuestas RPC bufferizado (soporte a respuestas concurrentes)
 	responses := make(chan RespuestaPeticionVoto, len(nr.Nodos))
@@ -701,15 +701,15 @@ func (nr *NodoRaft) iniciarEleccion() {
 			return
 		case response := <-responses:
 			nr.mutex.Lock()
-			if response.Mandate > nr.mandatoActual {
+			if response.Mandate > nr.currentTerm {
 				nr.Logger.Println("Found higher mandate. Returning to follower state.")
-				nr.mandatoActual = response.Mandate
+				nr.currentTerm = response.Mandate
 				nr.State = Follower
 				nr.votedFor = -1
 				nr.mutex.Unlock()
 				return
 			}
-			if response.VoteGranted && response.Mandate == nr.mandatoActual {
+			if response.VoteGranted && response.Mandate == nr.currentTerm {
 				grantedVotes++
 				nr.Logger.Printf("Vote granted! Total: %d\n", grantedVotes)
 				if grantedVotes > len(nr.Nodos)/2 {
@@ -726,7 +726,7 @@ func (nr *NodoRaft) iniciarEleccion() {
 func (nr *NodoRaft) enviarLatidosATodos() {
 	args := HeartbeatArgs{
 		IdLeader: nr.Yo,
-		Mandato:  nr.mandatoActual,
+		Mandato:  nr.currentTerm,
 	}
 	for i := 0; i < len(nr.Nodos); i++ {
 		go func(nr *NodoRaft, nodo int, args *HeartbeatArgs) {
@@ -751,9 +751,9 @@ func (nr *NodoRaft) convertirEnLeader() {
 	nr.mutex.Lock()
 	nr.Logger.Println("Toy akì")
 	nr.State = Leader
-	nr.IdLider = nr.Yo
+	nr.LeaderId = nr.Yo
 	nr.leaderHeartBeatTicker.Reset(nr.heartbeatTime)
-	nr.Logger.Println("IdLeader: ", nr.IdLider)
+	nr.Logger.Println("IdLeader: ", nr.LeaderId)
 	nr.mutex.Unlock()
 	// Inicializar nextIndex y matchIndex para el envío de registros?
 }
@@ -762,7 +762,7 @@ func (nr *NodoRaft) convertirEnLeader() {
 func (nr *NodoRaft) convertirEnFollower(mandate int, leader int) {
 	//DON'T LOCK, FUNCTION MUST BE CALLED WITH MUTEX CONTROL
 	nr.State = Follower
-	nr.IdLider = leader
-	nr.mandatoActual = mandate
+	nr.LeaderId = leader
+	nr.currentTerm = mandate
 	nr.leaderHeartBeatTicker.Stop()
 }

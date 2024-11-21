@@ -70,6 +70,18 @@ func TestPrimerasPruebas(t *testing.T) { // (m *testing.M) {
 	// Test4: Tres operaciones comprometidas en configuración estable
 	t.Run("T4:tresOperacionesComprometidasEstable",
 		func(t *testing.T) { cfg.tresOperacionesComprometidasEstable(t) })
+
+	t.Run("T5:failComprometerNoLeader",
+		func(t *testing.T) { cfg.failComprometerNoLeader(t) })
+
+	t.Run("T6:comprometerConDosNodos",
+		func(t *testing.T) { cfg.comprometerConDosNodos(t) })
+	t.Run("T7:noComprometerConUnNodo",
+		func(t *testing.T) { cfg.noComprometerConUnNodo(t) })
+
+	t.Run("T8:Someter5OperacionesConcorrentemente",
+		func(t *testing.T) { cfg.Someter5OperacionesConcorrentemente(t) })
+
 }
 
 // ---------------------------------------------------------------------
@@ -208,22 +220,22 @@ func (cfg *configDespliegue) tresOperacionesComprometidasEstable(t *testing.T) {
 	var someterReply raft.ResultadoRemoto
 
 	op1 := raft.Entry{
-		Operacion: "write",
-		Clave:     "hola-it",
-		Valor:     "ciao",
+		Operation: "write",
+		Key:       "hola-it",
+		Value:     "ciao",
 	}
 	op2 := raft.Entry{
-		Operacion: "write",
-		Clave:     "hola-en",
-		Valor:     "hello",
+		Operation: "write",
+		Key:       "hola-en",
+		Value:     "hello",
 	}
 	op3 := raft.Entry{
-		Operacion: "read",
-		Clave:     "hola-en",
+		Operation: "read",
+		Key:       "hola-en",
 	}
 	op4 := raft.Entry{
-		Operacion: "read",
-		Clave:     "hola-it",
+		Operation: "read",
+		Key:       "hola-it",
 	}
 
 	err := cfg.nodosRaft[idLider].CallTimeout("NodoRaft.SometerOperacionRaft",
@@ -259,6 +271,265 @@ func (cfg *configDespliegue) tresOperacionesComprometidasEstable(t *testing.T) {
 	}
 
 	// Parar réplicas almacenamiento en remoto
+
+	fmt.Println(".............", t.Name(), "Superado")
+}
+
+// Comprobamos que no se pueda comprometer una entrada pidiendo a un nodo seguidor
+func (cfg *configDespliegue) failComprometerNoLeader(t *testing.T) {
+	t.Skip("SKIPPED FalloAnteriorElegirNuevoLiderTest3")
+
+	defer cfg.stopDistributedProcesses() //parametros
+
+	fmt.Println(t.Name(), ".....................")
+
+	cfg.startDistributedProcesses()
+
+	idLider := cfg.pruebaUnLider(3)
+	fmt.Printf("Lider inicial es %d\n", idLider)
+	nodosNoLeader := []int{(idLider + 1) % 3, (idLider + 2) % 3}
+
+	var someterReply raft.ResultadoRemoto
+
+	op1 := raft.Entry{
+		Operation: "write",
+		Key:       "hola-it",
+		Value:     "ciao",
+	}
+
+	for _, idNodoNoLeader := range nodosNoLeader {
+		err := cfg.nodosRaft[idNodoNoLeader].CallTimeout("NodoRaft.SometerOperacionRaft",
+			&op1, &someterReply, 1000*time.Millisecond)
+		check.CheckError(err, "Error al someter operaciòn 1")
+		if someterReply.Success ||
+			someterReply.EsLider == true ||
+			someterReply.IdLider != idLider {
+			fmt.Printf("Nodo %d intento comprometer entrada o tiene estado incorrecto\n", idNodoNoLeader)
+			fmt.Println(someterReply)
+			t.Fail()
+		}
+	}
+
+	// Parar réplicas almacenamiento en remoto
+
+	fmt.Println(".............", t.Name(), "Superado")
+}
+
+func (cfg *configDespliegue) comprometerConDosNodos(t *testing.T) {
+	//t.Skip("SKIPPED FalloAnteriorElegirNuevoLiderTest3")
+
+	defer cfg.stopDistributedProcesses() //parametros
+
+	fmt.Println(t.Name(), ".....................")
+
+	cfg.startDistributedProcesses()
+
+	idLider := cfg.pruebaUnLider(3)
+
+	var reply raft.Vacio
+
+	err := cfg.nodosRaft[(idLider+1)%3].CallTimeout("NodoRaft.ParaNodo",
+		raft.Vacio{}, &reply, 10*time.Millisecond)
+	check.CheckError(err, "Error al parar un seguidor")
+
+	var someterReply raft.ResultadoRemoto
+
+	op1 := raft.Entry{
+		Operation: "write",
+		Key:       "hola-it",
+		Value:     "ciao",
+	}
+	op2 := raft.Entry{
+		Operation: "write",
+		Key:       "hola-en",
+		Value:     "hello",
+	}
+	op3 := raft.Entry{
+		Operation: "read",
+		Key:       "hola-en",
+	}
+	op4 := raft.Entry{
+		Operation: "read",
+		Key:       "hola-it",
+	}
+
+	err = cfg.nodosRaft[idLider].CallTimeout("NodoRaft.SometerOperacionRaft",
+		&op1, &someterReply, 1000*time.Millisecond)
+	check.CheckError(err, "Error al someter operaciòn 1")
+	if !(someterReply.Success) {
+		fmt.Printf("Operaciòn no comprometida\n")
+		cfg.t.Fail()
+	}
+
+	err = cfg.nodosRaft[idLider].CallTimeout("NodoRaft.SometerOperacionRaft",
+		&op2, &someterReply, 1000*time.Millisecond)
+	check.CheckError(err, "Error al someter operaciòn 2")
+	if !(someterReply.Success) {
+		fmt.Printf("Operaciòn no comprometida")
+		cfg.t.Fail()
+	}
+
+	err = cfg.nodosRaft[idLider].CallTimeout("NodoRaft.SometerOperacionRaft",
+		&op3, &someterReply, 1000*time.Millisecond)
+	check.CheckError(err, "Error al someter operaciòn 3")
+	if !(someterReply.Success) {
+		fmt.Printf("Operaciòn no comprometida")
+		cfg.t.Fail()
+	}
+
+	err = cfg.nodosRaft[idLider].CallTimeout("NodoRaft.SometerOperacionRaft",
+		&op4, &someterReply, 1000*time.Millisecond)
+	check.CheckError(err, "Error al someter operaciòn 4")
+	if !(someterReply.Success) {
+		fmt.Printf("Operaciòn no comprometida")
+		cfg.t.Fail()
+	}
+
+	fmt.Println(".............", t.Name(), "Superado")
+}
+
+func (cfg *configDespliegue) noComprometerConUnNodo(t *testing.T) {
+	//t.Skip("SKIPPED FalloAnteriorElegirNuevoLiderTest3")
+
+	defer cfg.stopDistributedProcesses() //parametros
+
+	fmt.Println(t.Name(), ".....................")
+
+	cfg.startDistributedProcesses()
+
+	idLider := cfg.pruebaUnLider(3)
+
+	var reply raft.Vacio
+
+	err := cfg.nodosRaft[(idLider+1)%3].CallTimeout("NodoRaft.ParaNodo",
+		raft.Vacio{}, &reply, 10*time.Millisecond)
+	check.CheckError(err, "Error al parar un seguidor")
+
+	err = cfg.nodosRaft[(idLider+2)%3].CallTimeout("NodoRaft.ParaNodo",
+		raft.Vacio{}, &reply, 10*time.Millisecond)
+	check.CheckError(err, "Error al parar segundo seguidor")
+
+	var someterReply raft.ResultadoRemoto
+
+	op1 := raft.Entry{
+		Operation: "write",
+		Key:       "hola-it",
+		Value:     "ciao",
+	}
+	op2 := raft.Entry{
+		Operation: "write",
+		Key:       "hola-en",
+		Value:     "hello",
+	}
+	op3 := raft.Entry{
+		Operation: "read",
+		Key:       "hola-en",
+	}
+	op4 := raft.Entry{
+		Operation: "read",
+		Key:       "hola-it",
+	}
+
+	err = cfg.nodosRaft[idLider].CallTimeout("NodoRaft.SometerOperacionRaft",
+		&op1, &someterReply, 1000*time.Millisecond)
+	check.CheckError(err, "Error al someter operaciòn 1")
+	if someterReply.Success {
+		fmt.Printf("Operaciòn comprometida por error")
+		cfg.t.Fail()
+	}
+
+	err = cfg.nodosRaft[idLider].CallTimeout("NodoRaft.SometerOperacionRaft",
+		&op2, &someterReply, 1000*time.Millisecond)
+	check.CheckError(err, "Error al someter operaciòn 2")
+	if someterReply.Success {
+		fmt.Printf("Operaciòn comprometida por error")
+		cfg.t.Fail()
+	}
+
+	err = cfg.nodosRaft[idLider].CallTimeout("NodoRaft.SometerOperacionRaft",
+		&op3, &someterReply, 1000*time.Millisecond)
+	check.CheckError(err, "Error al someter operaciòn 3")
+	if someterReply.Success {
+		fmt.Printf("Operaciòn comprometida por error")
+		cfg.t.Fail()
+	}
+
+	err = cfg.nodosRaft[idLider].CallTimeout("NodoRaft.SometerOperacionRaft",
+		&op4, &someterReply, 1000*time.Millisecond)
+	check.CheckError(err, "Error al someter operaciòn 4")
+	if someterReply.Success {
+		fmt.Printf("Operaciòn comprometida por error")
+		cfg.t.Fail()
+	}
+
+	fmt.Println(".............", t.Name(), "Superado")
+}
+func (cfg *configDespliegue) Someter5OperacionesConcorrentemente(t *testing.T) {
+	//t.Skip("SKIPPED FalloAnteriorElegirNuevoLiderTest3")
+
+	defer cfg.stopDistributedProcesses() //parametros
+
+	fmt.Println(t.Name(), ".....................")
+
+	cfg.startDistributedProcesses()
+
+	idLider := cfg.pruebaUnLider(3)
+
+	var reply raft.Vacio
+
+	err := cfg.nodosRaft[(idLider+1)%3].CallTimeout("NodoRaft.ParaNodo",
+		raft.Vacio{}, &reply, 10*time.Millisecond)
+	check.CheckError(err, "Error al parar un seguidor")
+
+	err = cfg.nodosRaft[(idLider+2)%3].CallTimeout("NodoRaft.ParaNodo",
+		raft.Vacio{}, &reply, 10*time.Millisecond)
+	check.CheckError(err, "Error al parar segundo seguidor")
+
+	op1 := raft.Entry{
+		Operation: "write",
+		Key:       "hola-it",
+		Value:     "ciao",
+	}
+	op2 := raft.Entry{
+		Operation: "write",
+		Key:       "hola-en",
+		Value:     "hello",
+	}
+	op3 := raft.Entry{
+		Operation: "read",
+		Key:       "hola-en",
+	}
+	op4 := raft.Entry{
+		Operation: "read",
+		Key:       "hola-it",
+	}
+	op5 := raft.Entry{
+		Operation: "write",
+		Key:       "hola-de",
+		Value:     "halo",
+	}
+
+	entries := []raft.Entry{
+		op1,
+		op2,
+		op3,
+		op4,
+		op5,
+	}
+
+	results := make(chan raft.ResultadoRemoto, len(entries))
+
+	for _, entry := range entries {
+		go func(e raft.Entry, ch chan<- raft.ResultadoRemoto) {
+
+			result := raft.ResultadoRemoto{}
+
+			err = cfg.nodosRaft[idLider].CallTimeout("NodoRaft.SometerOperacionRaft",
+				&e, &result, 1000*time.Millisecond)
+			check.CheckError(err, "Error al someter operaciòn")
+			ch <- result
+		}(entry, results)
+	}
 
 	fmt.Println(".............", t.Name(), "Superado")
 }
