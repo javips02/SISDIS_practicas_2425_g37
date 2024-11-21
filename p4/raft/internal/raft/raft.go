@@ -115,7 +115,7 @@ type NodoRaft struct {
 	leaderHeartBeatTicker *time.Ticker //tiempo restante para dar un nuevo latido
 }
 
-var barrera sync.WaitGroup
+//var barrera sync.WaitGroup
 
 // Creacion de un nuevo nodo de eleccion
 //
@@ -213,7 +213,7 @@ func NuevoNodo(nodos []rpctimeout.HostPort, yo int,
 
 	go nr.monitorizarTemporizadoresRaft() // monitorizar timeout eleccion y HB
 	//IdNodo, Mandato, EsLider, IdLider := nr.obtenerEstado()
-	//nr.Logger.Println(nr.obtenerEstado())
+	nr.Logger.Println(nr.obtenerEstado())
 	return nr
 }
 
@@ -403,7 +403,8 @@ type EstadoRemoto struct {
 
 func (nr *NodoRaft) ObtenerEstadoNodo(args Vacio, reply *EstadoRemoto) error {
 	reply.IdNodo, reply.Mandato, reply.EsLider, reply.IdLider = nr.obtenerEstado()
-	//nr.Logger.Println(nr.obtenerEstado())
+	nr.Logger.Print("ObtenerEstadoRemoto: ")
+	nr.Logger.Print(nr.obtenerEstado())
 	return nil
 }
 

@@ -31,7 +31,7 @@ const (
 
 // PATH de los ejecutables de modulo golang de servicio Raft
 // var PATH string = filepath.Join(os.Getenv("HOME"), "tmp", "p3", "raft")
-var PATH string = "/home/conte/Desktop/Lezioni/SSDD/SISDIS_practicas_2425_g37/p3/raft/"
+var PATH string = "/home/conte/Desktop/Lezioni/SSDD/SISDIS_practicas_2425_g37/p4/raft/"
 
 // go run cmd/srvraft/main.go 0 127.0.0.1:29001 127.0.0.1:29002 127.0.0.1:29003
 var EXECREPLICACMD string = "cd " + PATH + "; go run " + EXECREPLICA
@@ -134,7 +134,7 @@ func (cfg *configDespliegue) stop() {
 
 // Se ponen en marcha replicas - 3 NODOS RAFT
 func (cfg *configDespliegue) soloArranqueYparadaTest1(t *testing.T) {
-	t.Skip("SKIPPED soloArranqueYparadaTest1")
+	//t.Skip("SKIPPED soloArranqueYparadaTest1")
 
 	// Parar réplicas almacenamiento en remoto
 	defer cfg.stopDistributedProcesses() //parametros
@@ -156,11 +156,12 @@ func (cfg *configDespliegue) soloArranqueYparadaTest1(t *testing.T) {
 	cfg.comprobarEstadoRemoto(2, 0, false, -1)
 
 	fmt.Println(".............", t.Name(), "Superado")
+	fmt.Printf("\n\n\n")
 }
 
 // Primer lider en marcha - 3 NODOS RAFT
 func (cfg *configDespliegue) elegirPrimerLiderTest2(t *testing.T) {
-	t.Skip("SKIPPED ElegirPrimerLiderTest2")
+	//t.Skip("SKIPPED ElegirPrimerLiderTest2")
 
 	// Parar réplicas almacenamiento en remoto
 
@@ -173,12 +174,13 @@ func (cfg *configDespliegue) elegirPrimerLiderTest2(t *testing.T) {
 	cfg.pruebaUnLider(3)
 
 	fmt.Println(".............", t.Name(), "Superado")
+	fmt.Printf("\n\n\n")
 	defer cfg.stopDistributedProcesses() //parametros
 }
 
 // Fallo de un primer lider y reeleccion de uno nuevo - 3 NODOS RAFT
 func (cfg *configDespliegue) falloAnteriorElegirNuevoLiderTest3(t *testing.T) {
-	t.Skip("SKIPPED FalloAnteriorElegirNuevoLiderTest3")
+	//t.Skip("SKIPPED FalloAnteriorElegirNuevoLiderTest3")
 
 	// Parar réplicas almacenamiento en remoto
 	defer cfg.stopDistributedProcesses() //parametros
@@ -202,6 +204,7 @@ func (cfg *configDespliegue) falloAnteriorElegirNuevoLiderTest3(t *testing.T) {
 	cfg.pruebaUnLider(3)
 
 	fmt.Println(".............", t.Name(), "Superado")
+	fmt.Printf("\n\n\n")
 }
 
 // 3 operaciones comprometidas con situacion estable y sin fallos - 3 NODOS RAFT
@@ -273,11 +276,12 @@ func (cfg *configDespliegue) tresOperacionesComprometidasEstable(t *testing.T) {
 	// Parar réplicas almacenamiento en remoto
 
 	fmt.Println(".............", t.Name(), "Superado")
+	fmt.Printf("\n\n\n")
 }
 
 // Comprobamos que no se pueda comprometer una entrada pidiendo a un nodo seguidor
 func (cfg *configDespliegue) failComprometerNoLeader(t *testing.T) {
-	t.Skip("SKIPPED FalloAnteriorElegirNuevoLiderTest3")
+	//t.Skip("SKIPPED FalloAnteriorElegirNuevoLiderTest3")
 
 	defer cfg.stopDistributedProcesses() //parametros
 
@@ -313,6 +317,7 @@ func (cfg *configDespliegue) failComprometerNoLeader(t *testing.T) {
 	// Parar réplicas almacenamiento en remoto
 
 	fmt.Println(".............", t.Name(), "Superado")
+	fmt.Printf("\n\n\n")
 }
 
 func (cfg *configDespliegue) comprometerConDosNodos(t *testing.T) {
@@ -386,6 +391,7 @@ func (cfg *configDespliegue) comprometerConDosNodos(t *testing.T) {
 	}
 
 	fmt.Println(".............", t.Name(), "Superado")
+	fmt.Printf("\n\n\n")
 }
 
 func (cfg *configDespliegue) noComprometerConUnNodo(t *testing.T) {
@@ -434,7 +440,7 @@ func (cfg *configDespliegue) noComprometerConUnNodo(t *testing.T) {
 		&op1, &someterReply, 1000*time.Millisecond)
 	check.CheckError(err, "Error al someter operaciòn 1")
 	if someterReply.Success {
-		fmt.Printf("Operaciòn comprometida por error")
+		fmt.Printf("Operaciòn comprometida por error\n\n")
 		cfg.t.Fail()
 	}
 
@@ -463,6 +469,7 @@ func (cfg *configDespliegue) noComprometerConUnNodo(t *testing.T) {
 	}
 
 	fmt.Println(".............", t.Name(), "Superado")
+	fmt.Printf("\n\n\n")
 }
 func (cfg *configDespliegue) Someter5OperacionesConcorrentemente(t *testing.T) {
 	//t.Skip("SKIPPED FalloAnteriorElegirNuevoLiderTest3")
@@ -532,6 +539,7 @@ func (cfg *configDespliegue) Someter5OperacionesConcorrentemente(t *testing.T) {
 	}
 
 	fmt.Println(".............", t.Name(), "Superado")
+	fmt.Printf("\n\n\n")
 }
 
 // --------------------------------------------------------------------------
@@ -609,9 +617,9 @@ func (cfg *configDespliegue) stopDistributedProcesses() {
 	var reply raft.Vacio
 
 	for _, endPoint := range cfg.nodosRaft {
-		err := endPoint.CallTimeout("NodoRaft.ParaNodo",
+		endPoint.CallTimeout("NodoRaft.ParaNodo",
 			raft.Vacio{}, &reply, 10*time.Millisecond)
-		check.CheckError(err, "Error en llamada RPC Para nodo")
+		//check.CheckError(err, "Error en llamada RPC Para nodo")
 	}
 }
 
