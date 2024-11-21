@@ -549,10 +549,11 @@ func (nr *NodoRaft) AppendEntries(args *ArgsAppendEntries,
 	nr.Logger.Println("Log actualizado: ", nr.Logs)
 	nr.mutex.Unlock()
 
-	// if leader commit > commit index form current node, choose min
-	/*if args.LeaderCommit > nr.commitIndex {
+	//5. If leader commit > commit index form current node,
+	//	choose min(leaderCommit, index of last new entry)
+	if args.LeaderCommit > nr.commitIndex {
 		nr.commitIndex = min(args.LeaderCommit, nr.commitIndex)
-	}*/
+	}
 	return nil //si llega hasta aquí, return NoError (error nil) de RPC
 }
 
