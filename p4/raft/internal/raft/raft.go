@@ -518,23 +518,31 @@ type Results struct {
 func (nr *NodoRaft) AppendEntries(args *ArgsAppendEntries,
 	results *Results) error {
 	results.Success = true //sin mandatos siempre será success
-	// if term < currentTerm --> reply false and the term for the current node
+	// 1. if term < currentTerm --> reply false and the term for the current node
 	if args.Term < nr.mandatoActual {
 		results.Term = nr.mandatoActual
 		results.Success = false
 		return nil
 	}
-	// if !exists entry at prevLogIndex == term from prevLogTerm --> reply false (outdated)
+	// 2. if !exists entry at prevLogIndex == term from prevLogTerm --> reply false
 	if len(nr.Logs) < args.prevLogTerm ||
 		nr.Logs[args.prevLogTerm].Mandato != args.prevLogTerm {
 		results.Term = nr.mandatoActual
 		results.Success = false
 		return nil
 	}
-	//if newEntry.index == otherEntry.index && termNew != termOther --> reply false
+	//3. if newEntry.index == otherEntry.index && termNew != termOther --> reply false
+	for i, entry := range nr.Logs {
+		fmt.Printf("Operacion: %s, Clave: %s, Valor: %s, Mandato: %d\n",
+			entry.Operacion, entry.Clave, entry.Valor, entry.Mandato)
+		if args.LeaderCommit == i && args.Term != nr.Logs[i].Mandato {
+			nr.mutex.Lock()
+			nr.Logs = append(nr.Logs[:i], nr.Logs[i+1:]...)
+			nr.mutex.Unlock()
+		}
+	}
 
-	//Append any new entries not already in the log
-
+	//4. Append any new entries not already in the log
 	nr.mutex.Lock()
 	for _, value := range args.Entries {
 		nr.lastApplied++
