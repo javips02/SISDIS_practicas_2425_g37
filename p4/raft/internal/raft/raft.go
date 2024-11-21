@@ -537,7 +537,7 @@ func (nr *NodoRaft) AppendEntries(args *ArgsAppendEntries,
 			entry.Operacion, entry.Clave, entry.Valor, entry.Mandato)
 		if args.LeaderCommit == i && args.Term != nr.Logs[i].Mandato {
 			nr.mutex.Lock()
-			nr.Logs = append(nr.Logs[:i], nr.Logs[i+1:]...)
+			nr.Logs = nr.Logs[:i]
 			nr.mutex.Unlock()
 		}
 	}
