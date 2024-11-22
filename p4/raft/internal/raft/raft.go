@@ -736,15 +736,14 @@ func (nr *NodoRaft) enviarLatidosATodos() {
 	}
 }
 
+// TO BE CALLED ONLY WITH MUTEX CONTROL
 func (nr *NodoRaft) convertirEnLeader() {
 	nr.Logger.Println("I am the leader now")
-	nr.mutex.Lock()
 	nr.Logger.Println("Toy akì")
 	nr.State = Leader
 	nr.LeaderId = nr.Yo
 	nr.leaderHeartBeatTicker.Reset(nr.heartbeatTime)
 	nr.Logger.Println("IdLeader: ", nr.LeaderId)
-	nr.mutex.Unlock()
 	// Inicializar nextIndex y matchIndex para el envío de registros?
 }
 
