@@ -18,9 +18,9 @@ import (
 
 const (
 	//nodos replicas
-	REPLICA1 = "192.168.3.9:29004"
-	REPLICA2 = "192.168.3.10:29004"
-	REPLICA3 = "192.168.3.11:29004"
+	REPLICA1 = "127.0.0.1:29001"
+	REPLICA2 = "127.0.0.1:29002"
+	REPLICA3 = "127.0.0.1:29003"
 
 	// paquete main de ejecutables relativos a directorio raiz de modulo
 	EXECREPLICA = "cmd/srvraft/main.go"
@@ -31,7 +31,7 @@ const (
 
 // PATH de los ejecutables de modulo golang de servicio Raft
 // var PATH string = filepath.Join(os.Getenv("HOME"), "tmp", "p3", "raft")
-var PATH string = "/misc/alumnos/sd/sd2425/a847803/raftp3"
+var PATH string = "/home/conte/Desktop/Lezioni/SSDD/SISDIS_practicas_2425_g37/p3/raft/"
 
 // go run cmd/srvraft/main.go 0 127.0.0.1:29001 127.0.0.1:29002 127.0.0.1:29003
 var EXECREPLICACMD string = "cd " + PATH + "; go run " + EXECREPLICA
@@ -126,9 +126,9 @@ func (cfg *configDespliegue) stop() {
 // Se ponen en marcha replicas - 3 NODOS RAFT
 func (cfg *configDespliegue) soloArranqueYparadaTest1(t *testing.T) {
 	//t.Skip("SKIPPED soloArranqueYparadaTest1")
-	defer cfg.stopDistributedProcesses() //parametros
 
 	// Parar réplicas almacenamiento en remoto
+	defer cfg.stopDistributedProcesses() //parametros
 
 	fmt.Println(t.Name(), ".....................")
 
@@ -147,12 +147,11 @@ func (cfg *configDespliegue) soloArranqueYparadaTest1(t *testing.T) {
 	cfg.comprobarEstadoRemoto(2, 0, false, -1)
 
 	fmt.Println(".............", t.Name(), "Superado")
-
 }
 
 // Primer lider en marcha - 3 NODOS RAFT
 func (cfg *configDespliegue) elegirPrimerLiderTest2(t *testing.T) {
-	t.Skip("SKIPPED ElegirPrimerLiderTest2")
+	//t.Skip("SKIPPED ElegirPrimerLiderTest2")
 
 	// Parar réplicas almacenamiento en remoto
 
@@ -165,15 +164,15 @@ func (cfg *configDespliegue) elegirPrimerLiderTest2(t *testing.T) {
 	cfg.pruebaUnLider(3)
 
 	fmt.Println(".............", t.Name(), "Superado")
-
-	cfg.stopDistributedProcesses() //parametros
+	defer cfg.stopDistributedProcesses() //parametros
 }
 
 // Fallo de un primer lider y reeleccion de uno nuevo - 3 NODOS RAFT
 func (cfg *configDespliegue) falloAnteriorElegirNuevoLiderTest3(t *testing.T) {
-	t.Skip("SKIPPED FalloAnteriorElegirNuevoLiderTest3")
+	//t.Skip("SKIPPED FalloAnteriorElegirNuevoLiderTest3")
 
 	// Parar réplicas almacenamiento en remoto
+	defer cfg.stopDistributedProcesses() //parametros
 
 	fmt.Println(t.Name(), ".....................")
 
@@ -194,13 +193,13 @@ func (cfg *configDespliegue) falloAnteriorElegirNuevoLiderTest3(t *testing.T) {
 	cfg.pruebaUnLider(3)
 
 	fmt.Println(".............", t.Name(), "Superado")
-
-	cfg.stopDistributedProcesses() //parametros
 }
 
 // 4 operaciones comprometidas con situacion estable y sin fallos - 3 NODOS RAFT
 func (cfg *configDespliegue) tresOperacionesComprometidasEstable(t *testing.T) {
-	t.Skip("SKIPPED FalloAnteriorElegirNuevoLiderTest3")
+	//t.Skip("SKIPPED FalloAnteriorElegirNuevoLiderTest3")
+
+	defer cfg.stopDistributedProcesses() //parametros
 
 	fmt.Println(t.Name(), ".....................")
 
@@ -265,12 +264,13 @@ func (cfg *configDespliegue) tresOperacionesComprometidasEstable(t *testing.T) {
 	// Parar réplicas almacenamiento en remoto
 
 	fmt.Println(".............", t.Name(), "Superado")
-	cfg.stopDistributedProcesses() //parametros
 }
 
 // Comprobamos que no se pueda comprometer una entrada pidiendo a un nodo seguidor
 func (cfg *configDespliegue) failComprometerNoLeader(t *testing.T) {
-	t.Skip("SKIPPED FalloAnteriorElegirNuevoLiderTest3")
+	//t.Skip("SKIPPED FalloAnteriorElegirNuevoLiderTest3")
+
+	defer cfg.stopDistributedProcesses() //parametros
 
 	fmt.Println(t.Name(), ".....................")
 
@@ -304,7 +304,6 @@ func (cfg *configDespliegue) failComprometerNoLeader(t *testing.T) {
 	// Parar réplicas almacenamiento en remoto
 
 	fmt.Println(".............", t.Name(), "Superado")
-	cfg.stopDistributedProcesses() //parametros
 }
 
 // --------------------------------------------------------------------------
