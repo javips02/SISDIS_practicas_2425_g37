@@ -18,9 +18,9 @@ import (
 
 const (
 	//nodos replicas
-	REPLICA1 = "127.0.0.1:29001"
-	REPLICA2 = "127.0.0.1:29002"
-	REPLICA3 = "127.0.0.1:29003"
+	REPLICA1 = "192.168.3.9:29004"
+	REPLICA2 = "192.168.3.10:29004"
+	REPLICA3 = "192.168.3.11:29004"
 
 	// paquete main de ejecutables relativos a directorio raiz de modulo
 	EXECREPLICA = "cmd/srvraft/main.go"
@@ -31,7 +31,7 @@ const (
 
 // PATH de los ejecutables de modulo golang de servicio Raft
 // var PATH string = filepath.Join(os.Getenv("HOME"), "tmp", "p3", "raft")
-var PATH string = "/home/conte/Desktop/Lezioni/SSDD/SISDIS_practicas_2425_g37/p3/raft/"
+var PATH string = "/misc/alumnos/sd/sd2425/a847803/raftp3"
 
 // go run cmd/srvraft/main.go 0 127.0.0.1:29001 127.0.0.1:29002 127.0.0.1:29003
 var EXECREPLICACMD string = "cd " + PATH + "; go run " + EXECREPLICA
@@ -135,7 +135,7 @@ func (cfg *configDespliegue) soloArranqueYparadaTest1(t *testing.T) {
 	cfg.t = t // Actualizar la estructura de datos de tests para errores
 
 	// Poner en marcha replicas en remoto con un tiempo de espera incluido
-	cfg.startDistributedProcesses()
+	cfg.startDistributedProcesses(true)
 
 	// Comprobar estado replica 0
 	cfg.comprobarEstadoRemoto(0, 0, false, -1)
@@ -157,7 +157,7 @@ func (cfg *configDespliegue) elegirPrimerLiderTest2(t *testing.T) {
 
 	fmt.Println(t.Name(), ".....................")
 
-	cfg.startDistributedProcesses()
+	cfg.startDistributedProcesses(false)
 
 	// Se ha elegido lider ?
 	fmt.Printf("Probando lider en curso\n")
@@ -176,7 +176,7 @@ func (cfg *configDespliegue) falloAnteriorElegirNuevoLiderTest3(t *testing.T) {
 
 	fmt.Println(t.Name(), ".....................")
 
-	cfg.startDistributedProcesses()
+	cfg.startDistributedProcesses(false)
 
 	fmt.Printf("Lider inicial\n")
 	idLider := cfg.pruebaUnLider(3)
@@ -203,7 +203,7 @@ func (cfg *configDespliegue) tresOperacionesComprometidasEstable(t *testing.T) {
 
 	fmt.Println(t.Name(), ".....................")
 
-	cfg.startDistributedProcesses()
+	cfg.startDistributedProcesses(false)
 
 	idLider := cfg.pruebaUnLider(3)
 	fmt.Printf("Lider inicial es %d\n", idLider)
@@ -274,7 +274,7 @@ func (cfg *configDespliegue) failComprometerNoLeader(t *testing.T) {
 
 	fmt.Println(t.Name(), ".....................")
 
-	cfg.startDistributedProcesses()
+	cfg.startDistributedProcesses(false)
 
 	idLider := cfg.pruebaUnLider(3)
 	fmt.Printf("Lider inicial es %d\n", idLider)
@@ -360,21 +360,25 @@ func (cfg *configDespliegue) obtenerEstadoRemoto(
 
 // start  gestor de vistas; mapa de replicas y maquinas donde ubicarlos;
 // y lista clientes (host:puerto)
-func (cfg *configDespliegue) startDistributedProcesses() {
+func (cfg *configDespliegue) startDistributedProcesses(shouldWait bool) {
 	//cfg.t.Log("Before start following distributed processes: ", cfg.nodosRaft)
-
+	shouldWaitInt := 0
+	if shouldWait {
+		shouldWaitInt = 1
+	}
 	for i, endPoint := range cfg.nodosRaft {
-		despliegue.ExecMutipleHosts(EXECREPLICACMD+
-			" "+strconv.Itoa(i)+" "+
-			rpctimeout.HostPortArrayToString(cfg.nodosRaft),
+		command := EXECREPLICACMD +
+			" " + strconv.Itoa(i) + " " + strconv.Itoa(shouldWaitInt) + " " +
+			rpctimeout.HostPortArrayToString(cfg.nodosRaft)
+		fmt.Println("Launching ", command)
+		despliegue.ExecMutipleHosts(command,
 			[]string{endPoint.Host()}, cfg.cr)
 
 		// dar tiempo para se establezcan las replicas
-		//time.Sleep(2000 * time.Millisecond)
+		//time.Sleep(5000 * time.Millisecond)
 	}
-
+	time.Sleep(10000 * time.Millisecond)
 	// aproximadamente 500 ms para cada arranque por ssh en portatil
-	time.Sleep(2000 * time.Millisecond)
 }
 
 func (cfg *configDespliegue) stopDistributedProcesses() {

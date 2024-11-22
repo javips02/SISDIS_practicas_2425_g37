@@ -126,16 +126,16 @@ func (cfg *configDespliegue) stop() {
 // Se ponen en marcha replicas - 3 NODOS RAFT
 func (cfg *configDespliegue) soloArranqueYparadaTest1(t *testing.T) {
 	//t.Skip("SKIPPED soloArranqueYparadaTest1")
-	defer cfg.stopDistributedProcesses() //parametros
 
 	// Parar réplicas almacenamiento en remoto
+	defer cfg.stopDistributedProcesses() //parametros
 
 	fmt.Println(t.Name(), ".....................")
 
 	cfg.t = t // Actualizar la estructura de datos de tests para errores
 
 	// Poner en marcha replicas en remoto con un tiempo de espera incluido
-	cfg.startDistributedProcesses()
+	cfg.startDistributedProcesses(true)
 
 	// Comprobar estado replica 0
 	cfg.comprobarEstadoRemoto(0, 0, false, -1)
@@ -147,37 +147,36 @@ func (cfg *configDespliegue) soloArranqueYparadaTest1(t *testing.T) {
 	cfg.comprobarEstadoRemoto(2, 0, false, -1)
 
 	fmt.Println(".............", t.Name(), "Superado")
-
 }
 
 // Primer lider en marcha - 3 NODOS RAFT
 func (cfg *configDespliegue) elegirPrimerLiderTest2(t *testing.T) {
-	t.Skip("SKIPPED ElegirPrimerLiderTest2")
+	//t.Skip("SKIPPED ElegirPrimerLiderTest2")
 
 	// Parar réplicas almacenamiento en remoto
 
 	fmt.Println(t.Name(), ".....................")
 
-	cfg.startDistributedProcesses()
+	cfg.startDistributedProcesses(false)
 
 	// Se ha elegido lider ?
 	fmt.Printf("Probando lider en curso\n")
 	cfg.pruebaUnLider(3)
 
 	fmt.Println(".............", t.Name(), "Superado")
-
-	cfg.stopDistributedProcesses() //parametros
+	defer cfg.stopDistributedProcesses() //parametros
 }
 
 // Fallo de un primer lider y reeleccion de uno nuevo - 3 NODOS RAFT
 func (cfg *configDespliegue) falloAnteriorElegirNuevoLiderTest3(t *testing.T) {
-	t.Skip("SKIPPED FalloAnteriorElegirNuevoLiderTest3")
+	//t.Skip("SKIPPED FalloAnteriorElegirNuevoLiderTest3")
 
 	// Parar réplicas almacenamiento en remoto
+	defer cfg.stopDistributedProcesses() //parametros
 
 	fmt.Println(t.Name(), ".....................")
 
-	cfg.startDistributedProcesses()
+	cfg.startDistributedProcesses(false)
 
 	fmt.Printf("Lider inicial\n")
 	idLider := cfg.pruebaUnLider(3)
@@ -194,17 +193,17 @@ func (cfg *configDespliegue) falloAnteriorElegirNuevoLiderTest3(t *testing.T) {
 	cfg.pruebaUnLider(3)
 
 	fmt.Println(".............", t.Name(), "Superado")
-
-	cfg.stopDistributedProcesses() //parametros
 }
 
 // 4 operaciones comprometidas con situacion estable y sin fallos - 3 NODOS RAFT
 func (cfg *configDespliegue) tresOperacionesComprometidasEstable(t *testing.T) {
-	t.Skip("SKIPPED FalloAnteriorElegirNuevoLiderTest3")
+	//t.Skip("SKIPPED FalloAnteriorElegirNuevoLiderTest3")
+
+	defer cfg.stopDistributedProcesses() //parametros
 
 	fmt.Println(t.Name(), ".....................")
 
-	cfg.startDistributedProcesses()
+	cfg.startDistributedProcesses(false)
 
 	idLider := cfg.pruebaUnLider(3)
 	fmt.Printf("Lider inicial es %d\n", idLider)
@@ -265,16 +264,17 @@ func (cfg *configDespliegue) tresOperacionesComprometidasEstable(t *testing.T) {
 	// Parar réplicas almacenamiento en remoto
 
 	fmt.Println(".............", t.Name(), "Superado")
-	cfg.stopDistributedProcesses() //parametros
 }
 
 // Comprobamos que no se pueda comprometer una entrada pidiendo a un nodo seguidor
 func (cfg *configDespliegue) failComprometerNoLeader(t *testing.T) {
-	t.Skip("SKIPPED FalloAnteriorElegirNuevoLiderTest3")
+	//t.Skip("SKIPPED FalloAnteriorElegirNuevoLiderTest3")
+
+	defer cfg.stopDistributedProcesses() //parametros
 
 	fmt.Println(t.Name(), ".....................")
 
-	cfg.startDistributedProcesses()
+	cfg.startDistributedProcesses(false)
 
 	idLider := cfg.pruebaUnLider(3)
 	fmt.Printf("Lider inicial es %d\n", idLider)
@@ -304,7 +304,6 @@ func (cfg *configDespliegue) failComprometerNoLeader(t *testing.T) {
 	// Parar réplicas almacenamiento en remoto
 
 	fmt.Println(".............", t.Name(), "Superado")
-	cfg.stopDistributedProcesses() //parametros
 }
 
 // --------------------------------------------------------------------------
@@ -361,12 +360,15 @@ func (cfg *configDespliegue) obtenerEstadoRemoto(
 
 // start  gestor de vistas; mapa de replicas y maquinas donde ubicarlos;
 // y lista clientes (host:puerto)
-func (cfg *configDespliegue) startDistributedProcesses() {
+func (cfg *configDespliegue) startDistributedProcesses(shouldWait bool) {
 	//cfg.t.Log("Before start following distributed processes: ", cfg.nodosRaft)
-
+	shouldWaitInt := 0
+	if shouldWait {
+		shouldWaitInt = 1
+	}
 	for i, endPoint := range cfg.nodosRaft {
 		despliegue.ExecMutipleHosts(EXECREPLICACMD+
-			" "+strconv.Itoa(i)+" "+
+			" "+strconv.Itoa(i)+" "+strconv.Itoa(shouldWaitInt)+" "+
 			rpctimeout.HostPortArrayToString(cfg.nodosRaft),
 			[]string{endPoint.Host()}, cfg.cr)
 
