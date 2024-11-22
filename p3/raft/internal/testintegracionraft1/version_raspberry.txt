@@ -18,9 +18,9 @@ import (
 
 const (
 	//nodos replicas
-	REPLICA1 = "192.168.3.9:29001"
-	REPLICA2 = "192.168.3.10:29002"
-	REPLICA3 = "192.168.3.11:29003"
+	REPLICA1 = "192.168.3.9:29004"
+	REPLICA2 = "192.168.3.10:29004"
+	REPLICA3 = "192.168.3.11:29004"
 
 	// paquete main de ejecutables relativos a directorio raiz de modulo
 	EXECREPLICA = "cmd/srvraft/main.go"
@@ -125,7 +125,7 @@ func (cfg *configDespliegue) stop() {
 
 // Se ponen en marcha replicas - 3 NODOS RAFT
 func (cfg *configDespliegue) soloArranqueYparadaTest1(t *testing.T) {
-	t.Skip("SKIPPED soloArranqueYparadaTest1")
+	//t.Skip("SKIPPED soloArranqueYparadaTest1")
 	defer cfg.stopDistributedProcesses() //parametros
 
 	// Parar réplicas almacenamiento en remoto

@@ -213,7 +213,7 @@ func barreraDistribuida(nodos []rpctimeout.HostPort, yo int) {
 	done := make(chan struct{}, 1)
 
 	// Start a TCP listener for incoming connections
-	listener, err := net.Listen("tcp", string(nodos[yo]))
+	listener, err := net.Listen("tcp", "0.0.0.0:"+nodos[yo].Port())
 	if err != nil {
 		log.Fatalf("Node %d failed to start listener: %v", yo, err)
 	}
@@ -256,17 +256,27 @@ func barreraDistribuida(nodos []rpctimeout.HostPort, yo int) {
 		wg.Add(1)
 		go func(target int) {
 			defer wg.Done()
-			conn, err := net.Dial("tcp", string(nodos[target]))
-			if err != nil {
-				log.Fatalf("Node %d failed to connect to Node %d: %v", yo, target, err)
-			}
-			defer conn.Close()
 
-			// Send a sync message
-			if _, err := conn.Write([]byte("sync")); err != nil {
-				log.Printf("Node %d failed to send sync to Node %d: %v", yo, target, err)
+			for {
+				conn, err := net.Dial("tcp", string(nodos[target]))
+				if err != nil {
+					//log.Printf("Node %d failed to connect to Node %d: %v. Retrying...", yo, target, err)
+					time.Sleep(300 * time.Millisecond) // Wait before retrying
+					continue
+				}
+				defer conn.Close()
+
+				// Connection established, break the retry loop
+				log.Printf("Node %d successfully connected to Node %d", yo, target)
+
+				// Send a sync message
+				if _, err := conn.Write([]byte("sync")); err != nil {
+					log.Printf("Node %d failed to send sync to Node %d: %v", yo, target, err)
+				}
+				break
 			}
 		}(i)
+
 	}
 
 	// Wait for all outgoing connections to complete
