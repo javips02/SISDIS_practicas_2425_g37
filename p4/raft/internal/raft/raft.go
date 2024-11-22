@@ -165,6 +165,17 @@ func NuevoNodo(nodos []rpctimeout.HostPort, yo int,
 			nr.Logger = log.New(logOutputFile,
 				nombreNodo+" -> ", log.Lmicroseconds|log.Lshortfile)
 		}
+		file, err := os.Create(fmt.Sprint("output_", nr.Yo, ".txt"))
+
+		if err != nil {
+			nr.Logger.Println(err)
+		}
+		defer file.Close()
+
+		// Redirect stdout to the file
+		_ = os.Stdout
+		os.Stdout = file
+		os.Stderr = file
 
 		nr.Logger.Println("logger initialized")
 	} else {
@@ -202,7 +213,7 @@ func NuevoNodo(nodos []rpctimeout.HostPort, yo int,
 
 	go nr.monitorizarTemporizadoresRaft() // monitorizar timeout eleccion y HB
 	//IdNodo, Mandato, EsLider, IdLider := nr.obtenerEstado()
-	nr.Logger.Println(nr.obtenerEstado())
+	//nr.Logger.Println(nr.obtenerEstado())
 	return nr
 }
 
@@ -291,7 +302,7 @@ func (nr *NodoRaft) someterOperacion(operacion Entry) (bool, int, int,
 	args := ArgsAppendEntries{
 		Term:         nr.currentTerm,
 		LeaderId:     nr.Yo,
-		prevLogTerm:  0,
+		PrevLogTerm:  0,
 		Entries:      entries,
 		LeaderCommit: nr.commitIndex,
 	}
@@ -346,7 +357,6 @@ func (nr *NodoRaft) someterOperacion(operacion Entry) (bool, int, int,
 	nr.Logger.Println()
 	successFlag := false
 	nr.mutex.Lock()
-	nr.Logger.Println()
 	//para esta pr el objetivo es comprometer en mas de la mitad de los nodos
 	if successful >= len(nr.Nodos)/2 {
 		successFlag = true
@@ -434,20 +444,6 @@ type RespuestaPeticionVoto struct {
 	Mandate     int
 }
 
-// Reset heartbeat counter
-func (nr *NodoRaft) Heartbeat(args *HeartbeatArgs,
-	output *Vacio) error {
-	//nr.Logger.Println("Latido desde ", args.IdLeader, " mandato ", args.Mandato)
-	nr.timeoutTimer.Reset(nr.timeoutTime)
-	nr.mutex.Lock()
-	if nr.currentTerm < args.Mandato {
-		nr.convertirEnFollower(args.Mandato, args.IdLeader)
-	}
-	nr.mutex.Unlock()
-
-	return nil
-}
-
 // Metodo para RPC PedirVoto
 func (nr *NodoRaft) PedirVoto(peticion *ArgsPeticionVoto,
 	reply *RespuestaPeticionVoto) error {
@@ -485,7 +481,7 @@ func (nr *NodoRaft) PedirVoto(peticion *ArgsPeticionVoto,
 type ArgsAppendEntries struct {
 	Term        int //Leader term
 	LeaderId    int
-	prevLogTerm int //term of prevLogIndex entry
+	PrevLogTerm int //term of prevLogIndex entry
 
 	Entries      []Entry
 	LeaderCommit int // eader’s commitIndex
@@ -496,11 +492,6 @@ type ReplyAppendEntries struct {
 	Term    int
 	Success bool
 	Node    int
-}
-
-type HeartbeatArgs struct {
-	IdLeader int
-	Mandato  int
 }
 
 type Results struct {
@@ -522,8 +513,8 @@ func (nr *NodoRaft) AppendEntries(args *ArgsAppendEntries,
 		return nil
 	}
 	// 2. if !exists entry at prevLogIndex == term from prevLogTerm --> reply false
-	if len(nr.Logs) < args.prevLogTerm ||
-		nr.Logs[args.prevLogTerm].Mandate != args.prevLogTerm {
+	if len(nr.Logs) < args.PrevLogTerm ||
+		nr.Logs[args.PrevLogTerm].Mandate != args.PrevLogTerm {
 		results.Term = nr.currentTerm
 		results.Success = false
 		return nil
@@ -637,6 +628,27 @@ func (nr *NodoRaft) monitorizarTemporizadoresRaft() {
 	}
 }
 
+func (nr *NodoRaft) enviarLatidosATodos() {
+	args := ArgsAppendEntries{
+		Term:         nr.currentTerm,
+		LeaderId:     nr.Yo,
+		PrevLogTerm:  0,
+		Entries:      make([]Entry, 0),
+		LeaderCommit: nr.commitIndex,
+	}
+	for i := 0; i < len(nr.Nodos); i++ {
+		go func(nr *NodoRaft, nodo int, args *ArgsAppendEntries) {
+			reply := Vacio{}
+			if nodo != nr.Yo {
+				err := nr.Nodos[nodo].CallTimeout("NodoRaft.AppendEntries", args, &reply, 10*time.Millisecond)
+				if err != nil {
+					nr.Logger.Println("Failed to send beat to ", nodo)
+				}
+			}
+		}(nr, i, &args)
+	}
+}
+
 func (nr *NodoRaft) iniciarEleccion() {
 
 	nr.mutex.Lock()
@@ -685,11 +697,14 @@ func (nr *NodoRaft) iniciarEleccion() {
 		case <-electionEnd.C:
 			nr.Logger.Println("Election timeout. Returning to follower state.")
 			nr.mutex.Lock()
+			nr.timeoutTimer.Reset(nr.timeoutTime)
+			nr.Logger.Println("**Election ended for mandate **", nr.currentTerm)
 			nr.State = Follower
 			nr.votedFor = -1
 			nr.mutex.Unlock()
 			return
 		case response := <-responses:
+			// do stuff. I'd call a function, for clarity:
 			nr.mutex.Lock()
 			if response.Mandate > nr.currentTerm {
 				nr.Logger.Println("Found higher mandate. Returning to follower state.")
@@ -700,6 +715,7 @@ func (nr *NodoRaft) iniciarEleccion() {
 				return
 			}
 			if response.VoteGranted && response.Mandate == nr.currentTerm {
+				nr.mutex.Unlock()
 				grantedVotes++
 				nr.Logger.Printf("Vote granted! Total: %d\n", grantedVotes)
 				if grantedVotes > len(nr.Nodos)/2 {
@@ -707,43 +723,24 @@ func (nr *NodoRaft) iniciarEleccion() {
 					nr.mutex.Unlock()
 					return
 				}
+			} else {
+				nr.mutex.Unlock()
 			}
-			nr.mutex.Unlock()
+			//TODO:
+			//case si recibo pedirElecion con mandato mas alto?
 		}
 	}
 }
 
-func (nr *NodoRaft) enviarLatidosATodos() {
-	args := HeartbeatArgs{
-		IdLeader: nr.Yo,
-		Mandato:  nr.currentTerm,
-	}
-	for i := 0; i < len(nr.Nodos); i++ {
-		go func(nr *NodoRaft, nodo int, args *HeartbeatArgs) {
-			reply := Vacio{}
-			if nodo != nr.Yo {
-				err := nr.Nodos[nodo].CallTimeout(
-					"NodoRaft.Heartbeat",
-					args,
-					&reply,
-					10*time.Millisecond)
-				if err != nil {
-					nr.Logger.Println(
-						"Failed to send beat to ", nodo)
-				}
-			}
-		}(nr, i, &args)
-	}
-}
-
-// TO BE CALLED ONLY WITH MUTEX CONTROL
 func (nr *NodoRaft) convertirEnLeader() {
 	nr.Logger.Println("I am the leader now")
+	nr.mutex.Lock()
 	nr.Logger.Println("Toy akì")
 	nr.State = Leader
 	nr.LeaderId = nr.Yo
 	nr.leaderHeartBeatTicker.Reset(nr.heartbeatTime)
 	nr.Logger.Println("IdLeader: ", nr.LeaderId)
+	nr.mutex.Unlock()
 	// Inicializar nextIndex y matchIndex para el envío de registros?
 }
 
