@@ -513,8 +513,8 @@ func (nr *NodoRaft) AppendEntries(args *ArgsAppendEntries,
 		return nil
 	}
 	// 2. if !exists entry at prevLogIndex == term from prevLogTerm --> reply false
-	if len(nr.Logs) < args.prevLogTerm ||
-		nr.Logs[args.prevLogTerm].Mandate != args.prevLogTerm {
+	if len(nr.Logs) < args.PrevLogTerm ||
+		nr.Logs[args.PrevLogTerm].Mandate != args.PrevLogTerm {
 		results.Term = nr.currentTerm
 		results.Success = false
 		return nil
@@ -729,29 +729,6 @@ func (nr *NodoRaft) iniciarEleccion() {
 			//TODO:
 			//case si recibo pedirElecion con mandato mas alto?
 		}
-	}
-}
-
-func (nr *NodoRaft) enviarLatidosATodos() {
-	args := HeartbeatArgs{
-		IdLeader: nr.Yo,
-		Mandato:  nr.currentTerm,
-	}
-	for i := 0; i < len(nr.Nodos); i++ {
-		go func(nr *NodoRaft, nodo int, args *HeartbeatArgs) {
-			reply := Vacio{}
-			if nodo != nr.Yo {
-				err := nr.Nodos[nodo].CallTimeout(
-					"NodoRaft.Heartbeat",
-					args,
-					&reply,
-					10*time.Millisecond)
-				if err != nil {
-					nr.Logger.Println(
-						"Failed to send beat to ", nodo)
-				}
-			}
-		}(nr, i, &args)
 	}
 }
 
