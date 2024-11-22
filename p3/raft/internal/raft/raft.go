@@ -23,10 +23,12 @@ package raft
 // type AplicaOperacion
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"log"
 	"math/rand"
+	"net"
 	"os"
 
 	"sync"
@@ -192,6 +194,10 @@ func NuevoNodo(nodos []rpctimeout.HostPort, yo int,
 	nr.Logger.Println("Election timeout: ", nr.timeoutTime, "ms")
 	nr.Logger.Println("Heartbeat interval: ", nr.heartbeatTime, "ms")
 
+	nr.Logger.Println("**Waiting all processes to be online**")
+	barreraDistribuida(nodos, yo)
+	nr.Logger.Println("**Processes are online, starting timers**")
+
 	nr.timeoutTimer = time.NewTimer(nr.timeoutTime)
 	nr.leaderHeartBeatTicker = time.NewTicker(nr.heartbeatTime)
 	nr.leaderHeartBeatTicker.Stop()
@@ -200,6 +206,79 @@ func NuevoNodo(nodos []rpctimeout.HostPort, yo int,
 	//IdNodo, Mandato, EsLider, IdLider := nr.obtenerEstado()
 	//nr.Logger.Println(nr.obtenerEstado())
 	return nr
+}
+
+func barreraDistribuida(nodos []rpctimeout.HostPort, yo int) {
+	numNodos := len(nodos)
+	done := make(chan struct{}, 1)
+
+	// Start a TCP listener for incoming connections
+	listener, err := net.Listen("tcp", string(nodos[yo]))
+	if err != nil {
+		log.Fatalf("Node %d failed to start listener: %v", yo, err)
+	}
+	defer listener.Close()
+
+	// Channel to manage incoming sync messages
+	incoming := make(chan struct{}, numNodos-1)
+
+	// Accept incoming connections in a goroutine
+	go func() {
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				if errors.Is(err, net.ErrClosed) {
+					return // Listener closed
+				}
+				log.Printf("Node %d accept error: %v\n", yo, err)
+				continue
+			}
+
+			// Read a sync message from the connection
+			go func(c net.Conn) {
+				defer c.Close()
+				buffer := make([]byte, 4) // Placeholder buffer for "sync"
+				if _, err := c.Read(buffer); err != nil {
+					log.Printf("Node %d read error: %v\n", yo, err)
+					return
+				}
+				incoming <- struct{}{}
+			}(conn)
+		}
+	}()
+
+	// Establish outgoing connections to other nodes
+	var wg sync.WaitGroup
+	for i := 0; i < numNodos; i++ {
+		if i == yo {
+			continue
+		}
+		wg.Add(1)
+		go func(target int) {
+			defer wg.Done()
+			conn, err := net.Dial("tcp", string(nodos[target]))
+			if err != nil {
+				log.Fatalf("Node %d failed to connect to Node %d: %v", yo, target, err)
+			}
+			defer conn.Close()
+
+			// Send a sync message
+			if _, err := conn.Write([]byte("sync")); err != nil {
+				log.Printf("Node %d failed to send sync to Node %d: %v", yo, target, err)
+			}
+		}(i)
+	}
+
+	// Wait for all outgoing connections to complete
+	wg.Wait()
+
+	// Wait for incoming sync messages
+	for i := 0; i < numNodos-1; i++ {
+		<-incoming
+	}
+
+	// Signal that the barrier is complete
+	close(done)
 }
 
 // Metodo randomElectionTimeout() utilizado cuando queremos asignar un tiempo
