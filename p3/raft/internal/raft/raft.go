@@ -162,18 +162,6 @@ func NuevoNodo(nodos []rpctimeout.HostPort, yo int,
 			nr.Logger = log.New(logOutputFile,
 				nombreNodo+" -> ", log.Lmicroseconds|log.Lshortfile)
 		}
-		file, err := os.Create(fmt.Sprint("output_", nr.Yo, ".txt"))
-
-		if err != nil {
-			nr.Logger.Println(err)
-		}
-		defer file.Close()
-
-		// Redirect stdout to the file
-		_ = os.Stdout
-		os.Stdout = file
-		os.Stderr = file
-
 		nr.Logger.Println("logger initialized")
 	} else {
 		nr.Logger = log.New(io.Discard, "", 0)
@@ -500,7 +488,6 @@ func (nr *NodoRaft) AppendEntries(args *ArgsAppendEntries,
 	}
 	nr.mutex.Unlock()
 	if len(args.Entries) == 0 {
-		nr.Logger.Println("PUM!")
 		results.Success = true
 		return nil
 	}
@@ -588,7 +575,6 @@ func (nr *NodoRaft) monitorizarTemporizadoresRaft() {
 			nr.iniciarEleccion() // Start election
 
 		case <-nr.leaderHeartBeatTicker.C: // Leader heartbeat case
-			//nr.Logger.Println("PUM!")
 			go nr.enviarLatidosATodos()
 		}
 	}
