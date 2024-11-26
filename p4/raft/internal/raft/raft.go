@@ -496,8 +496,6 @@ func (nr *NodoRaft) StartNode(args *Vacio,
 
 // El metodo RPC que el leader llama en los seguidores para insertar una nueva
 // entrada en los seguidores.
-// Pueden insertarse varias entradas de un paso, por ejemplo cuando el nodo
-// revive despues de un fallo :)
 func (nr *NodoRaft) AppendEntries(args *ArgsAppendEntries,
 	results *Results) error {
 
@@ -719,7 +717,6 @@ func (nr *NodoRaft) iniciarEleccion() {
 				nr.Logger.Printf("Vote granted! Total: %d\n", grantedVotes)
 				if grantedVotes > len(nr.Nodos)/2 {
 					nr.convertirEnLeader()
-					nr.mutex.Unlock()
 					return
 				}
 			} else {
