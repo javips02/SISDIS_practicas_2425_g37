@@ -615,10 +615,13 @@ func (nr *NodoRaft) monitorizarTemporizadoresRaft() {
 		case <-nr.timeoutTimer.C:
 			nr.mutex.Lock()
 			if nr.State != Leader {
+				nr.mutex.Unlock()
 				nr.Logger.Println("Election!")
 				nr.iniciarEleccion()
+			} else {
+
+				nr.mutex.Unlock()
 			}
-			nr.mutex.Unlock()
 		case <-nr.leaderHeartBeatTicker.C:
 			if nr.State == Leader {
 				go nr.enviarLatidosATodos()
