@@ -65,7 +65,7 @@ type Entry struct {
 	Operation string // La operaciones posibles son "leer" y "escribir"
 	Key       string
 	Value     string // en el caso de la lectura Valor = ""
-	Mandate   int    //mandato al cual pertenece esta entrada
+	Term      int    //mandato al cual pertenece esta entrada
 }
 
 // A medida que el nodo Raft conoce las operaciones de las  entradas de registro
@@ -269,6 +269,7 @@ func (nr *NodoRaft) someterOperacion(entry Entry) (bool, int, int,
 
 	fmt.Println("Client sent operation to save: ", entry)
 	nr.mutex.Lock()
+	entry.Term = nr.currentTerm
 	indice := nr.commitIndex
 	mandato := nr.currentTerm
 	EsLider := nr.LeaderId == nr.Yo
@@ -535,7 +536,7 @@ func (nr *NodoRaft) AppendEntries(args *ArgsAppendEntries,
 	}
 	// 2. if !exists entry at prevLogIndex == term from prevLogTerm --> reply false
 	if len(nr.Logs) < args.PrevLogTerm ||
-		nr.Logs[args.PrevLogTerm].Mandate != args.PrevLogTerm {
+		nr.Logs[args.PrevLogTerm].Term != args.PrevLogTerm {
 		results.Term = nr.currentTerm
 		results.Success = false
 		nr.mutex.Unlock()
@@ -546,7 +547,7 @@ func (nr *NodoRaft) AppendEntries(args *ArgsAppendEntries,
 	for i, _ := range nr.Logs {
 		/*fmt.Printf("Operacion: %s, Clave: %s, Valor: %s, Mandato: %d\n",
 		entry.Operation, entry.Key, entry.Value, entry.Mandate)*/
-		if args.LeaderCommit == i && args.Term != nr.Logs[i].Mandate {
+		if args.LeaderCommit == i && args.Term != nr.Logs[i].Term {
 			nr.mutex.Lock()
 			nr.Logs = nr.Logs[:i]
 			nr.mutex.Unlock()
@@ -692,7 +693,7 @@ func (nr *NodoRaft) iniciarEleccion() {
 		Term:         nr.currentTerm,
 		CandidateId:  nr.Yo,
 		LastLogIndex: nr.lastApplied,
-		LastLogTerm:  nr.Logs[nr.lastApplied].Mandate,
+		LastLogTerm:  nr.Logs[nr.lastApplied].Term,
 	}
 	nr.mutex.Unlock()
 

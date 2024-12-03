@@ -76,12 +76,12 @@ func TestPrimerasPruebas(t *testing.T) { // (m *testing.M) {
 			func(t *testing.T) { cfg.failComprometerNoLeader(t) })
 	}
 
-	//t.Run("T6:comprometerConDosNodos",
-	//	func(t *testing.T) { cfg.comprometerConDosNodos(t) })
+	t.Run("T6:comprometerConDosNodos",
+		func(t *testing.T) { cfg.comprometerConDosNodos(t) })
 
 	// Test4: Tres operaciones comprometidas en configuración estable
-	//t.Run("T7:noComprometerConUnNodo",
-	//	func(t *testing.T) { cfg.noComprometerConUnNodo(t) })
+	t.Run("T7:noComprometerConUnNodo",
+		func(t *testing.T) { cfg.noComprometerConUnNodo(t) })
 
 	t.Run("T8:someterConcorrentemente",
 		func(t *testing.T) { cfg.someterConcorrentemente(t) })
