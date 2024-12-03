@@ -1,0 +1,4 @@
+127.0.0.1_29002 -> 12:06:11.126982 raft.go:166: logger initialized
+127.0.0.1_29002 -> 12:06:11.127017 raft.go:193: Election timeout:  975ms ms
+127.0.0.1_29002 -> 12:06:11.127034 raft.go:194: Heartbeat interval:  50ms ms
+127.0.0.1_29002 -> 12:06:12.102724 raft.go:618: Election!
