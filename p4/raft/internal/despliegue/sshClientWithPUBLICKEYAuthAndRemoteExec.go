@@ -136,6 +136,7 @@ func execOneHost(hostname string, results chan<- string, cmd string) {
 				continue
 			}
 
+			//fmt.Println("Ejecutando ", cmd, " en ", hostname)
 			// ejecuta comano con buena sesión ssh al host remoto
 			results <- executeCmd(hostname, cmd, session)
 

@@ -389,7 +389,12 @@ type EstadoRemoto struct {
 
 func (nr *NodoRaft) ObtenerEstadoNodo(args Vacio, reply *EstadoRemoto) error {
 	reply.IdNodo, reply.Mandato, reply.EsLider, reply.IdLider = nr.obtenerEstado()
-	nr.Logger.Println(nr.obtenerEstado())
+	nr.mutex.Lock()
+	nr.Logger.Println("ID nodo: ", reply.IdNodo,
+		", Mandato ", reply.Mandato,
+		", Soy leader: ", reply.EsLider,
+		", ID leader: ", reply.IdLider)
+	nr.mutex.Unlock()
 	return nil
 }
 

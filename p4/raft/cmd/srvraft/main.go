@@ -35,7 +35,7 @@ func main() {
 	rpc.Register(nr)
 
 	fmt.Println("Replica escucha en :", me, " de ", os.Args[3:])
-
+	fmt.Println("Osea en :", os.Args[3:][me])
 	l, err := net.Listen("tcp", os.Args[3:][me])
 	check.CheckError(err, "Main listen error:")
 

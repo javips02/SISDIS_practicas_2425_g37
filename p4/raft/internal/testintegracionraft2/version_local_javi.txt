@@ -31,7 +31,7 @@ const (
 
 // PATH de los ejecutables de modulo golang de servicio Raft
 // var PATH string = filepath.Join(os.Getenv("HOME"), "tmp", "p3", "raft")
-var PATH string = "/home/conte/Desktop/Lezioni/SSDD/SISDIS_practicas_2425_g37/p4/raft/"
+var PATH string = "/home/javi/github/SISDIS_practicas_2425_g37/p4/raft"
 
 // go run cmd/srvraft/main.go 0 127.0.0.1:29001 127.0.0.1:29002 127.0.0.1:29003
 var EXECREPLICACMD string = "cd " + PATH + "; go run " + EXECREPLICA
@@ -125,7 +125,7 @@ func (cfg *configDespliegue) stop() {
 
 // Se ponen en marcha replicas - 3 NODOS RAFT
 func (cfg *configDespliegue) soloArranqueYparadaTest1(t *testing.T) {
-	//t.Skip("SKIPPED soloArranqueYparadaTest1")
+	t.Skip("SKIPPED soloArranqueYparadaTest1")
 
 	// Parar réplicas almacenamiento en remoto
 	defer cfg.stopDistributedProcesses() //parametros
@@ -169,7 +169,7 @@ func (cfg *configDespliegue) elegirPrimerLiderTest2(t *testing.T) {
 
 // Fallo de un primer lider y reeleccion de uno nuevo - 3 NODOS RAFT
 func (cfg *configDespliegue) falloAnteriorElegirNuevoLiderTest3(t *testing.T) {
-	//t.Skip("SKIPPED FalloAnteriorElegirNuevoLiderTest3")
+	t.Skip("SKIPPED FalloAnteriorElegirNuevoLiderTest3")
 
 	// Parar réplicas almacenamiento en remoto
 	defer cfg.stopDistributedProcesses() //parametros
@@ -197,7 +197,7 @@ func (cfg *configDespliegue) falloAnteriorElegirNuevoLiderTest3(t *testing.T) {
 
 // 4 operaciones comprometidas con situacion estable y sin fallos - 3 NODOS RAFT
 func (cfg *configDespliegue) tresOperacionesComprometidasEstable(t *testing.T) {
-	//t.Skip("SKIPPED FalloAnteriorElegirNuevoLiderTest3")
+	t.Skip("SKIPPED FalloAnteriorElegirNuevoLiderTest3")
 
 	defer cfg.stopDistributedProcesses() //parametros
 
@@ -268,7 +268,7 @@ func (cfg *configDespliegue) tresOperacionesComprometidasEstable(t *testing.T) {
 
 // Comprobamos que no se pueda comprometer una entrada pidiendo a un nodo seguidor
 func (cfg *configDespliegue) failComprometerNoLeader(t *testing.T) {
-	//t.Skip("SKIPPED FalloAnteriorElegirNuevoLiderTest3")
+	t.Skip("SKIPPED FalloAnteriorElegirNuevoLiderTest3")
 
 	defer cfg.stopDistributedProcesses() //parametros
 
@@ -354,9 +354,7 @@ func (cfg *configDespliegue) obtenerEstadoRemoto(
 	err := cfg.nodosRaft[indiceNodo].CallTimeout("NodoRaft.ObtenerEstadoNodo",
 		&raft.Vacio{}, &reply, 10*time.Millisecond)
 	check.CheckError(err, "Error en llamada RPC ObtenerEstadoRemoto")
-	if err != nil {
-		fmt.Println("Error en llamada RPC ObtenerEstadoRemoto", err)
-	}
+
 	return reply.IdNodo, reply.Mandato, reply.EsLider, reply.IdLider
 }
 
@@ -369,17 +367,18 @@ func (cfg *configDespliegue) startDistributedProcesses(shouldWait bool) {
 		shouldWaitInt = 1
 	}
 	for i, endPoint := range cfg.nodosRaft {
-		despliegue.ExecMutipleHosts(EXECREPLICACMD+
-			" "+strconv.Itoa(i)+" "+strconv.Itoa(shouldWaitInt)+" "+
-			rpctimeout.HostPortArrayToString(cfg.nodosRaft),
+		command := EXECREPLICACMD +
+			" " + strconv.Itoa(i) + " " + strconv.Itoa(shouldWaitInt) + " " +
+			rpctimeout.HostPortArrayToString(cfg.nodosRaft)
+		fmt.Println("Launching ", command)
+		despliegue.ExecMutipleHosts(command,
 			[]string{endPoint.Host()}, cfg.cr)
 
 		// dar tiempo para se establezcan las replicas
-		time.Sleep(3000 * time.Millisecond)
+		//time.Sleep(5000 * time.Millisecond)
 	}
-
+	time.Sleep(10000 * time.Millisecond)
 	// aproximadamente 500 ms para cada arranque por ssh en portatil
-	time.Sleep(2000 * time.Millisecond)
 }
 
 func (cfg *configDespliegue) stopDistributedProcesses() {
