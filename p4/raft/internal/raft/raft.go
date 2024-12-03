@@ -94,8 +94,8 @@ type NodoRaft struct {
 	// Utilización opcional de este logger para depuración
 	// Cada nodo Raft tiene su propio registro de trazas (logs)
 	Logger *log.Logger
-	Logs   []Entry
-	// Vuestros datos aqui.
+	// Las entradas enviadas por el cliente/leader
+	Logs []Entry
 
 	// VALORES PERSISTENTES EN TODOS LOS SERVIDORES //
 
@@ -105,10 +105,10 @@ type NodoRaft struct {
 	//el log es Entries map[string][string] que venía dado
 
 	// VALORES VOLÁTILES DE ESTADO EN TODOS LOS SERVIDORES //
-
-	commitIndex  int         // index of highest log entry known to be committed
-	lastApplied  int         // índice de la entrada más alta aplicada a nuestra máquina de estados (0 ...)
-	timeoutTimer *time.Timer // tiempo restante para iniciar una nueva eleccion (seguidores)
+	lastAppendedIndex int         //The index of the last entry appended locally
+	commitIndex       int         // index of highest log entry known to be committed
+	lastApplied       int         // índice de la entrada más alta aplicada a nuestra máquina de estados (0 ...)
+	timeoutTimer      *time.Timer // tiempo restante para iniciar una nueva eleccion (seguidores)
 	// VALORES VOLÁTILES EN RÉPLICAS LÍDER (reinicializar estos valores después de cada elección) //
 
 	nextIndex             []int        //en cada posición, el índice de la siguiente entrada a mandar al servidor (leader_lastLog+1...)
@@ -230,17 +230,20 @@ func (nr *NodoRaft) para() {
 // El segundo valor es el mandato en curso
 // El tercer valor es true si el nodo cree ser el lider
 // Cuarto valor es el lider, es el indice del líder si no es él
-func (nr *NodoRaft) obtenerEstado() (int, int, bool, int) {
+// Cuinto es commitIndex
+// Sexto es lastApplied
+func (nr *NodoRaft) obtenerEstado() (int, int, bool, int, int, int) {
 
 	nr.mutex.Lock()
 	var yo = nr.Yo
 	esLider := nr.LeaderId == nr.Yo
 	idLider := nr.LeaderId
 	mandato := nr.currentTerm
-
+	commitIndex := nr.commitIndex
+	lastApplied := nr.lastApplied
 	nr.mutex.Unlock()
 
-	return yo, mandato, esLider, idLider
+	return yo, mandato, esLider, idLider, commitIndex, lastApplied
 }
 
 // El servicio que utilice Raft (base de datos clave/valor, por ejemplo)
@@ -261,9 +264,10 @@ func (nr *NodoRaft) obtenerEstado() (int, int, bool, int) {
 // - true si el nodo cree ser el lider
 // - El indice del líder
 // - El resultado de aplicar esta operación en máquina de estados
-func (nr *NodoRaft) someterOperacion(operacion Entry) (bool, int, int,
+func (nr *NodoRaft) someterOperacion(entry Entry) (bool, int, int,
 	bool, int, string) {
 
+	fmt.Println("Client sent operation to save: ", entry)
 	nr.mutex.Lock()
 	indice := nr.commitIndex
 	mandato := nr.currentTerm
@@ -279,12 +283,10 @@ func (nr *NodoRaft) someterOperacion(operacion Entry) (bool, int, int,
 		return false, indice, mandato, EsLider, idLider, valorADevolver
 	}
 
-	nr.Logger.Println(operacion)
-	// Definir la operación a someter
-
-	//var entries []Entry
+	//utiliamos este porque el Args quiere un array
 	entries := make([]Entry, 1)
-	entries[0] = operacion
+	entries[0] = entry
+
 	nr.mutex.Lock()
 	args := ArgsAppendEntries{
 		Term:         nr.currentTerm,
@@ -293,6 +295,10 @@ func (nr *NodoRaft) someterOperacion(operacion Entry) (bool, int, int,
 		Entries:      entries,
 		LeaderCommit: nr.commitIndex,
 	}
+
+	nr.Logs[nr.lastAppendedIndex] = entry
+	nr.lastAppendedIndex++
+
 	nr.mutex.Unlock()
 	repliesChan := make(chan ReplyAppendEntries, len(nr.Nodos))
 
@@ -305,13 +311,12 @@ func (nr *NodoRaft) someterOperacion(operacion Entry) (bool, int, int,
 					Node:    nodo,
 					Success: false,
 				}
-				nr.Logger.Println("Valor de args: ", args)
 				err := peer.CallTimeout("NodoRaft.AppendEntries", &args, &reply, 50*time.Millisecond) // TODO: ajustar timeout
-				nr.Logger.Printf("Enviada AppendEntries a %d, succeso? ", nodo)
+				//nr.Logger.Printf("Enviada AppendEntries a %d, succeso? ", nodo)
 				if reply.Success {
-					nr.Logger.Printf("SI!\n")
+					//nr.Logger.Printf("SI!\n")
 				} else {
-					nr.Logger.Printf("NO!\n")
+					//nr.Logger.Printf("NO!\n")
 				}
 				if err != nil {
 					repliesChan <- ReplyAppendEntries{
@@ -326,10 +331,10 @@ func (nr *NodoRaft) someterOperacion(operacion Entry) (bool, int, int,
 		}
 	}
 
-	nr.Logger.Println("Starting to read replies")
-	successful := 0
+	//Suponemos que en en leader la entry se guarde correctamente
+	successful := 1
+
 	for i := 0; i < len(nr.Nodos)-1; i++ {
-		nr.Logger.Println("i: ", i)
 		reply := <-repliesChan
 		if reply.Success {
 			successful++
@@ -341,25 +346,33 @@ func (nr *NodoRaft) someterOperacion(operacion Entry) (bool, int, int,
 			}
 		}
 	}
-	nr.Logger.Println()
+
 	successFlag := false
+
+	nr.Logger.Printf("%d nodes saved the entry", successful)
 	nr.mutex.Lock()
 	//para esta pr el objetivo es comprometer en mas de la mitad de los nodos
-	if successful >= len(nr.Nodos)/2 {
+	if successful > len(nr.Nodos)/2 {
+
+		nr.commitIndex = nr.commitIndex + 1
+
 		successFlag = true
 		indice = nr.commitIndex
 		mandato = nr.currentTerm
 		EsLider = nr.LeaderId == nr.Yo
 		idLider = nr.LeaderId
-		valorADevolver = "" //Don't touch it for now
+		valorADevolver = ""
 	} else {
-		successFlag = true
+		successFlag = false
 		indice = nr.commitIndex
 		mandato = nr.currentTerm
 		EsLider = nr.LeaderId == nr.Yo
 		idLider = nr.LeaderId
-		valorADevolver = "" //Don't touch it for now
+		valorADevolver = ""
 	}
+
+	nr.Logger.Println("Nuevo estado del registro de entradas:")
+	nr.Logger.Println(nr.Logs[0:nr.lastAppendedIndex])
 
 	nr.mutex.Unlock()
 	return successFlag, indice, mandato, EsLider, idLider, valorADevolver
@@ -383,12 +396,14 @@ type EstadoParcial struct {
 }
 
 type EstadoRemoto struct {
-	IdNodo int
+	IdNodo      int
+	CommitIndex int
+	LastApplied int
 	EstadoParcial
 }
 
 func (nr *NodoRaft) ObtenerEstadoNodo(args Vacio, reply *EstadoRemoto) error {
-	reply.IdNodo, reply.Mandato, reply.EsLider, reply.IdLider = nr.obtenerEstado()
+	reply.IdNodo, reply.Mandato, reply.EsLider, reply.IdLider, reply.CommitIndex, reply.LastApplied = nr.obtenerEstado()
 	nr.mutex.Lock()
 	nr.Logger.Println("ID nodo: ", reply.IdNodo,
 		", Mandato ", reply.Mandato,
