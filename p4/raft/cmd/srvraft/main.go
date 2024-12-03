@@ -34,7 +34,7 @@ func main() {
 	nr := raft.NuevoNodo(nodos, me, shouldWait, make(chan raft.AplicaOperacion, 1000))
 	rpc.Register(nr)
 
-	fmt.Println("Replica escucha en :", me, " de ", os.Args[2:])
+	fmt.Println("Replica escucha en :", me, " de ", os.Args[3:])
 
 	l, err := net.Listen("tcp", os.Args[3:][me])
 	check.CheckError(err, "Main listen error:")

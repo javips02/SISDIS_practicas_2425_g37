@@ -499,10 +499,18 @@ func (nr *NodoRaft) StartNode(args *Vacio,
 func (nr *NodoRaft) AppendEntries(args *ArgsAppendEntries,
 	results *Results) error {
 
+	nr.mutex.Lock()
+	nr.timeoutTimer.Reset(nr.timeoutTime)
+	//In case we are behind
+	if nr.currentTerm <= args.Term {
+		nr.convertirEnFollower(args.Term, args.LeaderId)
+	}
+
 	// 1. if term < currentTerm --> reply false and the term for the current node
 	if args.Term < nr.currentTerm {
 		results.Term = nr.currentTerm
 		results.Success = false
+		nr.mutex.Unlock()
 		return nil
 	}
 	// 2. if !exists entry at prevLogIndex == term from prevLogTerm --> reply false
@@ -510,12 +518,14 @@ func (nr *NodoRaft) AppendEntries(args *ArgsAppendEntries,
 		nr.Logs[args.PrevLogTerm].Mandate != args.PrevLogTerm {
 		results.Term = nr.currentTerm
 		results.Success = false
+		nr.mutex.Unlock()
 		return nil
 	}
+	nr.mutex.Unlock()
 	//3. if newEntry.index == otherEntry.index && termNew != termOther --> reply false
-	for i, entry := range nr.Logs {
-		fmt.Printf("Operacion: %s, Clave: %s, Valor: %s, Mandato: %d\n",
-			entry.Operation, entry.Key, entry.Value, entry.Mandate)
+	for i, _ := range nr.Logs {
+		/*fmt.Printf("Operacion: %s, Clave: %s, Valor: %s, Mandato: %d\n",
+		entry.Operation, entry.Key, entry.Value, entry.Mandate)*/
 		if args.LeaderCommit == i && args.Term != nr.Logs[i].Mandate {
 			nr.mutex.Lock()
 			nr.Logs = nr.Logs[:i]
@@ -526,7 +536,7 @@ func (nr *NodoRaft) AppendEntries(args *ArgsAppendEntries,
 	nr.mutex.Lock()
 	nr.Logs = append(nr.Logs[:nr.lastApplied+1], args.Entries...)
 	nr.lastApplied = len(nr.Logs) - 1
-	nr.Logger.Println("Log actualizado: ", nr.Logs)
+	//nr.Logger.Println("Log actualizado: ", nr.Logs)
 	nr.mutex.Unlock()
 
 	//5. If leader commit > commit index form current node,
@@ -605,6 +615,7 @@ func (nr *NodoRaft) enviarPeticionVoto(nodo int, args *ArgsPeticionVoto,
 // --------------------------------------------------------------------------
 
 func (nr *NodoRaft) monitorizarTemporizadoresRaft() {
+
 	//We wait for the test client to unlock the nodes
 	nr.barreraDistribuida.Lock()
 	nr.timeoutTimer = time.NewTimer(nr.timeoutTime)
@@ -623,9 +634,8 @@ func (nr *NodoRaft) monitorizarTemporizadoresRaft() {
 				nr.mutex.Unlock()
 			}
 		case <-nr.leaderHeartBeatTicker.C:
-			if nr.State == Leader {
-				go nr.enviarLatidosATodos()
-			}
+			//fmt.Println("Sent PUM")
+			go nr.enviarLatidosATodos()
 		}
 	}
 }
@@ -644,7 +654,7 @@ func (nr *NodoRaft) enviarLatidosATodos() {
 			if nodo != nr.Yo {
 				err := nr.Nodos[nodo].CallTimeout("NodoRaft.AppendEntries", args, &reply, 10*time.Millisecond)
 				if err != nil {
-					nr.Logger.Println("Failed to send beat to ", nodo)
+					//nr.Logger.Println("Failed to send beat to ", nodo)
 				}
 			}
 		}(nr, i, &args)
@@ -680,10 +690,10 @@ func (nr *NodoRaft) iniciarEleccion() {
 				}
 				nr.enviarPeticionVoto(nodoID, &peticion, &respuesta)
 				responses <- respuesta // Envía la respuesta recibida al canal
-				nr.Logger.Printf(
-					"Node %d responded with VoteGranted=%v for "+
-						"mandate %d\n", nodoID, respuesta.VoteGranted,
-					respuesta.Mandate)
+				/*nr.Logger.Printf(
+				"Node %d responded with VoteGranted=%v for "+
+					"mandate %d\n", nodoID, respuesta.VoteGranted,
+				respuesta.Mandate)*/
 			}(i)
 		}
 	}
@@ -695,7 +705,6 @@ func (nr *NodoRaft) iniciarEleccion() {
 	for {
 		select {
 		case <-electionEnd.C:
-			nr.Logger.Println("Election timeout. Returning to follower state.")
 			nr.mutex.Lock()
 			nr.timeoutTimer.Reset(nr.timeoutTime)
 			nr.Logger.Println("**Election ended for mandate **", nr.currentTerm)
@@ -732,13 +741,13 @@ func (nr *NodoRaft) iniciarEleccion() {
 }
 
 func (nr *NodoRaft) convertirEnLeader() {
-	nr.Logger.Println("I am the leader now")
 	nr.mutex.Lock()
 	nr.State = Leader
 	nr.LeaderId = nr.Yo
 	nr.leaderHeartBeatTicker.Reset(nr.heartbeatTime)
+	nr.currentTerm++ //After election we increase mandate
 	nr.mutex.Unlock()
-	// Inicializar nextIndex y matchIndex para el envío de registros?
+	nr.Logger.Println("I am the leader now")
 }
 
 // TO BE CALLED ONLY WITH MUTEX CONTROL
