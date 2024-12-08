@@ -1,4 +1,31 @@
 #!/bin/bash
+
+
+# Función para mostrar el mensaje de uso
+mostrar_uso() {
+    echo "Uso: $0 [r|t]"
+    echo "  r: Despliegue con el estado actual de statefulset (producción)"
+    echo "  t: Despliegue con el archivo de pruebas statefulset_go_test.yaml"
+    exit 1
+}
+# Verificar si se pasó un argumento
+if [[ $# -ne 1 ]]; then
+    echo "Error: Se requiere un solo argumento para indicar el modo de despliegue."
+    mostrar_uso
+fi
+if [[ "$1" != "r" && "$1" != "t" ]]; then
+    echo "Error: Argumento inválido '$1'"
+    mostrar_uso
+    exit 1
+fi
+
+# Definir la ruta de la configuración según el modo
+if [[ "$1" == "r" ]]; then
+    CONFIG_FILE="./Deployment/kube/statefulset_go.yaml"
+elif [[ "$1" == "t" ]]; then
+    CONFIG_FILE="./Deployment/kube/statefulset_go_test.yaml"
+fi
+
 echo "Iniciando clúster kind (si ya existe dará error)"
 ./Deployment/kube/kind-with-registry.sh
 # Variables
@@ -54,6 +81,6 @@ echo "Generando imágenes y subiéndolas al repositorio"
 )
 
 echo "Creando statefulSet dentro del cluster kind"
-kubectl apply -f statefulset_go.yaml
+kubectl apply -f "$CONFIG_FILE"
 sleep 2
 kubectl get pods --all-namespaces -o wide

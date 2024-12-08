@@ -47,8 +47,12 @@ spec:
             fieldRef:
               fieldPath: metadata.name
         command:
-        - /servidor
-        - $(MINOMBREPOD).$(MISUBDOMINIODNS):6000
+          - /servidor
+          - $(MINOMBREPOD).$(MISUBDOMINIODNS):6000
+          - "1"                                         # shouldWait constante
+          - "ss-0.ss-service.default.svc.cluster.local:6000"
+          - "ss-1.ss-service.default.svc.cluster.local:6000"
+          - "ss-2.ss-service.default.svc.cluster.local:6000"
         ports:
         - containerPort: 6000
 
