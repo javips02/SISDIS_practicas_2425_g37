@@ -1,4 +1,4 @@
-127.0.0.1_29003 -> 12:06:11.155506 raft.go:166: logger initialized
-127.0.0.1_29003 -> 12:06:11.155528 raft.go:193: Election timeout:  1.872s ms
-127.0.0.1_29003 -> 12:06:11.155538 raft.go:194: Heartbeat interval:  50ms ms
-127.0.0.1_29003 -> 12:06:13.029070 raft.go:618: Election!
+127.0.0.1_29003 -> 12:31:07.412289 raft.go:166: logger initialized
+127.0.0.1_29003 -> 12:31:07.412308 raft.go:193: Election timeout:  1.894s ms
+127.0.0.1_29003 -> 12:31:07.412317 raft.go:194: Heartbeat interval:  50ms ms
+127.0.0.1_29003 -> 12:31:12.611366 raft.go:409: ID nodo:  2 , Mandato  2 , Soy leader:  false , ID leader:  1

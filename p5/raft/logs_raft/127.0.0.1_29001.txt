@@ -1,4 +1,10 @@
-127.0.0.1_29001 -> 12:06:11.132313 raft.go:166: logger initialized
-127.0.0.1_29001 -> 12:06:11.132386 raft.go:193: Election timeout:  1.299s ms
-127.0.0.1_29001 -> 12:06:11.132421 raft.go:194: Heartbeat interval:  50ms ms
-127.0.0.1_29001 -> 12:06:12.432022 raft.go:618: Election!
+127.0.0.1_29001 -> 12:31:01.447398 raft.go:166: logger initialized
+127.0.0.1_29001 -> 12:31:01.447434 raft.go:193: Election timeout:  2.1s ms
+127.0.0.1_29001 -> 12:31:01.447451 raft.go:194: Heartbeat interval:  50ms ms
+127.0.0.1_29001 -> 12:31:03.548404 raft.go:651: Election!
+127.0.0.1_29001 -> 12:31:03.548451 raft.go:700: Starting election for mandate 1
+127.0.0.1_29001 -> 12:31:05.630140 raft.go:731: **Election ended for mandate ** 1
+127.0.0.1_29001 -> 12:31:05.665315 raft.go:468: Mandate 1got PedirVoto by 1
+127.0.0.1_29001 -> 12:31:05.665338 raft.go:479: Granted vote request to 1
+127.0.0.1_29001 -> 12:31:05.665344 raft.go:483: Mandate  1  voted for:  1
+127.0.0.1_29001 -> 12:31:12.610515 raft.go:409: ID nodo:  0 , Mandato  2 , Soy leader:  false , ID leader:  1

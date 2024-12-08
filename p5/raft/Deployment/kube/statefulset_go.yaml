@@ -1,7 +1,8 @@
 #
 # Parece que los nombres del campo "containers" de pods a dar de alta en dns
 # deben coincidir el subcampo campo "name" (servidor) del manifiesto con el nombre
-# del contenedor en el registro (localhost:5001/servidor:latest)apiVersion: v1
+# del contenedor en el registro (localhost:5001/servidor:latest)
+apiVersion: v1
 kind: Service
 metadata:
   name: ss-service

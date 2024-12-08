@@ -18,9 +18,9 @@ import (
 
 const (
 	//nodos replicas
-	REPLICA1 = "127.0.0.1:29001"
-	REPLICA2 = "127.0.0.1:29002"
-	REPLICA3 = "127.0.0.1:29003"
+	REPLICA1 = "ss-0.ss-service.default.svc.cluster.local:6000"
+	REPLICA2 = "ss-1.ss-service.default.svc.cluster.local:6000"
+	REPLICA3 = "ss-2.ss-service.default.svc.cluster.local:6000"
 
 	// paquete main de ejecutables relativos a directorio raiz de modulo
 	EXECREPLICA = "cmd/srvraft/main.go"
@@ -31,7 +31,7 @@ const (
 
 // PATH de los ejecutables de modulo golang de servicio Raft
 // var PATH string = filepath.Join(os.Getenv("HOME"), "tmp", "p3", "raft")
-var PATH string = "/home/conte/Desktop/Lezioni/SSDD/SISDIS_practicas_2425_g37/p4/raft/"
+var PATH string = "/home/javi/github/SISDIS_practicas_2425_g37/p5/raft/"
 
 // go run cmd/srvraft/main.go 0 127.0.0.1:29001 127.0.0.1:29002 127.0.0.1:29003
 var EXECREPLICACMD string = "cd " + PATH + "; go run " + EXECREPLICA
