@@ -3,17 +3,12 @@ package testintegracionraft1
 import (
 	"fmt"
 	"raft/internal/comun/check"
-
-	//"log"
-	//"crypto/rand"
-
-	"strconv"
-	"testing"
-	"time"
-
 	"raft/internal/comun/rpctimeout"
 	"raft/internal/despliegue"
 	"raft/internal/raft"
+	"strconv"
+	"testing"
+	"time"
 )
 
 const (
