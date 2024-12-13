@@ -2,4 +2,4 @@ FROM alpine
 
 COPY cliente /usr/local/bin/cliente
 
-EXPOSE 7000
+EXPOSE 6001
