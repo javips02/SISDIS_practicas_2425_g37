@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: cliente
+spec:
+  restartPolicy: Never
+  containers:
+    - name: cliente
+      image: localhost:5001/cliente:latest
+      command:
+        - sleep
+        - "infinity"
+      ports:
+        - containerPort: 6001

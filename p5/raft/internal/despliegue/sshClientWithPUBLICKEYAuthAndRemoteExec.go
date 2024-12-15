@@ -113,7 +113,7 @@ func getSigner(pkeyFile string) (ssh.Signer, error) {
 // Ejecutar comando ssh en un host con autentifiación de clave pública
 func execOneHost(hostname string, results chan<- string, cmd string) {
 
-	pkeyFiles := []string{"id_ed25519", "id_ecdsa", "id_rsa"}
+	pkeyFiles := []string{"id_rsa", "id_ed25519", "id_ecdsa"}
 
 	for _, pkeyOneFile := range pkeyFiles {
 		signer, errSigner := getSigner(pkeyOneFile)

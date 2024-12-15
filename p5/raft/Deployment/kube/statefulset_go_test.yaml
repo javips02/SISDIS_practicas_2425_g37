@@ -1,4 +1,4 @@
-# Service para los servidores
+# Service
 apiVersion: v1
 kind: Service
 metadata:
@@ -6,17 +6,21 @@ metadata:
   labels:
     app: rep
 spec:
-  clusterIP: None  # Headless service para DNS
+  clusterIP: None   # Headless service, solo para dar de alta pods en DNS
   selector:
     app: rep
   ports:
-    - port: 6000
-      name: servidor-port
-      protocol: TCP
-      targetPort: 6000
+  - port: 6000             # Comunicación interna entre pods
+    targetPort: 6000
+    name: interno
+    protocol: TCP
+  - port: 6001             # Test de carga externo
+    targetPort: 6001
+    name: carga
+    protocol: TCP
 
 ---
-# StatefulSet de los servidores
+# StatefulSet
 kind: StatefulSet
 apiVersion: apps/v1
 metadata:
@@ -35,30 +39,24 @@ spec:
     spec:
       terminationGracePeriodSeconds: 10
       containers:
-        - name: servidor
-          image: localhost:5001/servidor:latest
-          env:
-            - name: MISUBDOMINIODNS
-              value: ss-service.default.svc.cluster.local
-          ports:
-            - containerPort: 6000
-          # No usamos un comando para mantener el contenedor en estado estable.
+      - name: servidor
+        image: localhost:5001/servidor:latest
+        env:
+        - name: MISUBDOMINIODNS
+          value: ss-service.default.svc.cluster.local
+        - name: MINOMBREPOD
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        command:
+          - /bin/sh
+          - -c
+          - "/usr/sbin/sshd -D & /servidor $(MINOMBREPOD).$(MISUBDOMINIODNS):6000 1 ss-0.ss-service.default.svc.cluster.local:6000 ss-1.ss-service.default.svc.cluster.local:6000 ss-2.ss-service.default.svc.cluster.local:6000"
 
----
-# Servicio para ejecutar los comandos de test
-apiVersion: v1
-kind: Pod
-metadata:
-  name: test-pod
-  labels:
-    app: test
-spec:
-  containers:
-  - name: test
-    image: localhost:5001/cliente:latest  # Imagen con los binarios para pruebas
-    command:
-      - /usr/bin/test_command  # Reemplaza esto con el comando real de prueba.
-    env:
-      - name: SERVIDOR_DNS
-        value: ss-service.default.svc.cluster.local
-    restartPolicy: Never
+        ports:
+        - containerPort: 6000   # Puerto para comunicación interna
+          name: interno
+        - containerPort: 6001   # Puerto para peticiones de test de carga
+          name: carga
+
+

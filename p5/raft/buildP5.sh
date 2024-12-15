@@ -34,7 +34,7 @@ TESTS_SRC="./internal/testintegracionraft2"
 OUTPUT_DIR="./Deployment/bin"
 SERVER_BIN="$OUTPUT_DIR/server"
 TESTS_BIN_DIR="$OUTPUT_DIR/tests"
-
+CONFIG_CLIENTE="./Deployment/kube/cliente_go.yaml"
 # Crear directorios de salida
 mkdir -p "$OUTPUT_DIR"
 mkdir -p "$TESTS_BIN_DIR"
@@ -82,5 +82,12 @@ echo "Generando imágenes y subiéndolas al repositorio"
 
 echo "Creando statefulSet dentro del cluster kind"
 kubectl apply -f "$CONFIG_FILE"
-sleep 2
+echo "Esperando a deployment de servers antes de depslegar el cliente..."
+sleep 15
+echo "Aplicando deployment del cliente..."
+if [[ "$1" == "t" ]]; then
+	kubectl apply -f "$CONFIG_CLIENTE"
+fi
+echo "Esperando a que todo se asiente en el clúster para hacer un get pods..."
+sleep 10
 kubectl get pods --all-namespaces -o wide
