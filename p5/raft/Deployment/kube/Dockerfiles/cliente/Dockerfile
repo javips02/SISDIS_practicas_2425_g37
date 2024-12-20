@@ -4,10 +4,13 @@ FROM alpine:latest
 RUN apk update && \
     apk add --no-cache openssh
 
-# Copiar las claves privadas para autenticación
+# Copia claves para root
+RUN mkdir -p /root/.ssh && \
+    chmod 700 /root/.ssh
+COPY ssh_key.pub /root/.ssh/authorized_keys
 COPY ssh_key /root/.ssh/id_rsa
-RUN chmod 600 /root/.ssh/id_rsa && \
-    mkdir -p /root/.ssh
+RUN chmod 600 /root/.ssh/authorized_keys && \
+    chmod 600 /root/.ssh/id_rsa
 
 # Configuración para evitar prompts de confirmación
 RUN echo "Host *.ss-service.default.svc.cluster.local\n\
@@ -18,4 +21,5 @@ RUN echo "Host *.ss-service.default.svc.cluster.local\n\
 COPY cliente /cliente
 RUN chmod +x /cliente
 
+EXPOSE 6000 6001 22
 CMD ["/bin/sh"]

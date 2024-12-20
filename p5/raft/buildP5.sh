@@ -83,11 +83,11 @@ echo "Generando imágenes y subiéndolas al repositorio"
 echo "Creando statefulSet dentro del cluster kind"
 kubectl apply -f "$CONFIG_FILE"
 echo "Esperando a deployment de servers antes de depslegar el cliente..."
-sleep 15
+sleep 5
 echo "Aplicando deployment del cliente..."
 if [[ "$1" == "t" ]]; then
 	kubectl apply -f "$CONFIG_CLIENTE"
 fi
 echo "Esperando a que todo se asiente en el clúster para hacer un get pods..."
-sleep 10
+sleep 5
 kubectl get pods --all-namespaces -o wide

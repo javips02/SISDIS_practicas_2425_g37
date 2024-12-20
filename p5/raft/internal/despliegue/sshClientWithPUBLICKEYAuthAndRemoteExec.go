@@ -96,7 +96,7 @@ func getSigner(pkeyFile string) (ssh.Signer, error) {
 	//Read private key file for user
 	pkey, err := os.ReadFile(filepath.Join(os.Getenv("HOME"), ".ssh", pkeyFile))
 
-	//fmt.Println("PrivKey: ", string(pkey))
+	fmt.Println("PrivKey: ", string(pkey))
 
 	if err == nil {
 		// Create the Signer for this private key.
@@ -114,6 +114,7 @@ func execOneHost(hostname string, results chan<- string, cmd string) {
 
 	for _, pkeyOneFile := range pkeyFiles {
 		signer, errSigner := getSigner(pkeyOneFile)
+		log.Println("Firmador de la clave: %s", signer)
 		if errSigner == nil {
 			// ssh_config must have option "HashKnownHosts no" !!!!
 			//hostKey := getHostKey(hostname)
