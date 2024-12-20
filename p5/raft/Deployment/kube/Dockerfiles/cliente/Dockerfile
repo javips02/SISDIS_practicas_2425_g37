@@ -15,7 +15,7 @@ RUN echo "Host *.ss-service.default.svc.cluster.local\n\
     UserKnownHostsFile /dev/null" > /root/.ssh/config
 
 # Copiar el script del cliente (opcional)
-COPY cliente /usr/local/bin/cliente
-RUN chmod +x /usr/local/bin/cliente
+COPY cliente /cliente
+RUN chmod +x /cliente
 
 CMD ["/bin/sh"]

@@ -12,16 +12,13 @@ package despliegue
 import (
 	"bufio"
 	"bytes"
-
-	//"fmt"
-
+	"fmt"
+	"golang.org/x/crypto/ssh"
 	"log"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
-
-	"golang.org/x/crypto/ssh"
 )
 
 func getHostKey(host string) ssh.PublicKey {
@@ -59,18 +56,18 @@ func getHostKey(host string) ssh.PublicKey {
 
 // Ejecutar comando ssh remoto y devolver salida
 func executeCmd(hostname string, cmd string, session *ssh.Session) string {
-	//fmt.Println("APRES SESSION")
+	fmt.Println("APRES SESSION")
 
 	var stdoutBuf bytes.Buffer
 
 	session.Stdout = &stdoutBuf
 	session.Stderr = &stdoutBuf
 
-	//fmt.Println("ANTES RUN", cmd)
+	fmt.Println("ANTES RUN", cmd)
 
 	session.Run(cmd)
 
-	//fmt.Println("TRAS RUN", cmd)
+	fmt.Println("TRAS RUN", cmd)
 
 	return hostname + ": \n" + stdoutBuf.String()
 }
@@ -125,10 +122,11 @@ func execOneHost(hostname string, results chan<- string, cmd string) {
 
 			conn, errConn := ssh.Dial("tcp", hostname+":22", config)
 			if errConn != nil {
+				log.Println("Error concreto en el dial: %s", errConn)
 				continue
 			}
 
-			//fmt.Printf("APRES CONN %#v\n", config)
+			fmt.Println("APRES CONN %#v", config)
 
 			session, errSession := conn.NewSession()
 			if errSession != nil {
@@ -136,7 +134,7 @@ func execOneHost(hostname string, results chan<- string, cmd string) {
 				continue
 			}
 
-			//fmt.Println("Ejecutando ", cmd, " en ", hostname)
+			fmt.Println("Ejecutando ", cmd, " en ", hostname)
 			// ejecuta comano con buena sesión ssh al host remoto
 			results <- executeCmd(hostname, cmd, session)
 
@@ -148,6 +146,7 @@ func execOneHost(hostname string, results chan<- string, cmd string) {
 	}
 
 	log.Fatalf("NO funciona conexión ssh con clave pública a %s", hostname)
+	//log.Println("NO funciona conexión ssh con clave pública a %s", hostname)
 }
 
 // Ejecutar un mismo comando en múltiples hosts mediante ssh
